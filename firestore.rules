@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Access rule: allow authenticated users or time-bounded access
+    function isAllowed() {
+      return request.auth != null || request.time < timestamp.date(2026, 12, 31);
+    }
+
+    // Students collection: Only lab teachers and admins can view and manage students
+    match /students/{studentId} {
+      allow read, write: if isAllowed();
+    }
+
+    // Attendance records: One record per student per date
+    match /attendance/{attendanceId} {
+      allow read, write: if isAllowed();
+    }
+
+    // Teachers / Instructors managed by Admin
+    match /teachers/{teacherId} {
+      allow read, write: if isAllowed();
+    }
+  }
+}

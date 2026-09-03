@@ -1,0 +1,6 @@
+{
+  "name": "IT Lab Attendance",
+  "description": "Student attendance management system for IT Lab with daily attendance marking and monthly register Excel export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

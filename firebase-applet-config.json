@@ -1,0 +1,12 @@
+{
+  "projectId": "ths-attendence-system",
+  "appId": "1:95552333987:web:cf4bcfb2bfa4c0fec63716",
+  "apiKey": "AIzaSyDh9rPt48RZlVXqVhsZh6mOjUpGAK2wWdc",
+  "authDomain": "ths-attendence-system.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "ths-attendence-system.firebasestorage.app",
+  "messagingSenderId": "95552333987",
+  "measurementId": "",
+  "oAuthClientId": "95552333987-lk3hfeoceg9h4jn3tqbd47n6523hpufe.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
+}

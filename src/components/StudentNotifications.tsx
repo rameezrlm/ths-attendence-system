@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, CheckCircle2 } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import type { Ticket } from '../types';
 import {
   fetchStudentTickets,
   formatTicketTime,
   markStudentTicketsSeen,
+  TICKET_STATUS_LABELS,
 } from '../services/ticketService';
+import { TicketProgress, TicketStatusBadge } from './TicketStatusBadge';
 
 interface StudentNotificationsProps {
   studentId: string;
@@ -42,7 +44,7 @@ export const StudentNotifications: React.FC<StudentNotificationsProps> = ({
   }, [studentId]);
 
   const notifications = useMemo(
-    () => tickets.filter((t) => t.status === 'approved' || t.status === 'rejected'),
+    () => tickets.filter((t) => t.status !== 'open'),
     [tickets]
   );
 
@@ -60,7 +62,7 @@ export const StudentNotifications: React.FC<StudentNotificationsProps> = ({
       <div>
         <h2 className="text-lg font-bold text-slate-900 tracking-tight">Notifications</h2>
         <p className="text-xs text-slate-500 mt-0.5">
-          Ticket updates from your teacher. Approved tickets are marked here.
+          Status updates for your tickets: Issue approved, In progress, and Work done / resolved.
         </p>
       </div>
 
@@ -69,47 +71,41 @@ export const StudentNotifications: React.FC<StudentNotificationsProps> = ({
           <Bell className="w-8 h-8 text-slate-300 mx-auto mb-2" />
           <p className="text-sm font-semibold text-slate-800">No notifications yet</p>
           <p className="text-xs text-slate-500 mt-1">
-            When a teacher approves or rejects a ticket, it will appear here.
+            You will be notified when a teacher approves an issue or updates its progress.
           </p>
         </div>
       ) : (
         <ul className="space-y-3">
-          {notifications.map((ticket) => {
-            const isApproved = ticket.status === 'approved';
-            return (
-              <li
-                key={ticket.id}
-                className={`bg-white rounded-xl border shadow-xs p-4 ${
-                  isApproved ? 'border-emerald-200' : 'border-slate-200'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{ticket.subject}</p>
-                    <p className="text-xs text-slate-500 mt-1">{ticket.message}</p>
-                  </div>
-                  {isApproved ? (
-                    <span className="inline-flex items-center gap-1 shrink-0 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-md border bg-emerald-50 text-emerald-800 border-emerald-200">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Approved
-                    </span>
-                  ) : (
-                    <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-md border bg-red-50 text-red-700 border-red-200">
-                      Rejected
-                    </span>
-                  )}
+          {notifications.map((ticket) => (
+            <li
+              key={ticket.id}
+              className={`bg-white rounded-xl border shadow-xs p-4 ${
+                ticket.status === 'approved'
+                  ? 'border-emerald-200'
+                  : ticket.status === 'resolved'
+                  ? 'border-indigo-200'
+                  : 'border-slate-200'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-900">{ticket.subject}</p>
+                  <p className="text-xs text-slate-500 mt-1">{ticket.message}</p>
                 </div>
-                {ticket.teacherNote && (
-                  <p className="mt-3 text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-                    Teacher note: {ticket.teacherNote}
-                  </p>
-                )}
-                <p className="text-[11px] text-slate-400 mt-2">
-                  {formatTicketTime(ticket.resolvedAt || ticket.updatedAt)}
+                <TicketStatusBadge status={ticket.status} />
+              </div>
+              <TicketProgress status={ticket.status} />
+              {ticket.teacherNote && (
+                <p className="mt-3 text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                  Teacher note: {ticket.teacherNote}
                 </p>
-              </li>
-            );
-          })}
+              )}
+              <p className="text-[11px] text-slate-400 mt-2">
+                {TICKET_STATUS_LABELS[ticket.status]} ·{' '}
+                {formatTicketTime(ticket.resolvedAt || ticket.updatedAt)}
+              </p>
+            </li>
+          ))}
         </ul>
       )}
     </div>

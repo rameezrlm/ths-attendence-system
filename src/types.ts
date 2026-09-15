@@ -83,7 +83,7 @@ export interface GradeMark {
   updatedAt: string;
 }
 
-export type TicketStatus = 'pending' | 'approved' | 'rejected';
+export type TicketStatus = 'open' | 'approved' | 'in_progress' | 'resolved';
 
 export interface Ticket {
   id: string;

@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, Plus, Ticket as TicketIcon } from 'lucide-react';
-import type { Ticket, TicketStatus } from '../types';
+import type { Ticket } from '../types';
 import {
   createTicket,
   fetchStudentTickets,
   formatTicketTime,
 } from '../services/ticketService';
+import { TicketProgress, TicketStatusBadge } from './TicketStatusBadge';
 
 interface StudentTicketsProps {
   studentId: string;
@@ -13,18 +14,6 @@ interface StudentTicketsProps {
   studentEmail: string;
   onTicketsChanged?: () => void;
 }
-
-const STATUS_STYLES: Record<TicketStatus, string> = {
-  pending: 'bg-amber-50 text-amber-800 border-amber-200',
-  approved: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-  rejected: 'bg-red-50 text-red-700 border-red-200',
-};
-
-const STATUS_LABELS: Record<TicketStatus, string> = {
-  pending: 'Pending',
-  approved: 'Approved',
-  rejected: 'Rejected',
-};
 
 export const StudentTickets: React.FC<StudentTicketsProps> = ({
   studentId,
@@ -74,7 +63,7 @@ export const StudentTickets: React.FC<StudentTicketsProps> = ({
       setTickets((prev) => [created, ...prev]);
       setSubject('');
       setMessage('');
-      setSuccess('Ticket submitted. A teacher will review it.');
+      setSuccess('Ticket submitted as a new issue. You will get updates as it moves forward.');
       onTicketsChanged?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit ticket.');
@@ -88,7 +77,7 @@ export const StudentTickets: React.FC<StudentTicketsProps> = ({
       <div>
         <h2 className="text-lg font-bold text-slate-900 tracking-tight">Tickets</h2>
         <p className="text-xs text-slate-500 mt-0.5">
-          Post a request for your teacher. You will get a notification when it is approved.
+          Post an issue. Your teacher will move it through Issue approved, In progress, then Work done.
         </p>
       </div>
 
@@ -120,7 +109,7 @@ export const StudentTickets: React.FC<StudentTicketsProps> = ({
               id="ticket-subject"
               type="text"
               required
-              placeholder="e.g. Leave request for Friday"
+              placeholder="e.g. Lab PC not turning on"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -134,7 +123,7 @@ export const StudentTickets: React.FC<StudentTicketsProps> = ({
               id="ticket-message"
               required
               rows={4}
-              placeholder="Describe your request..."
+              placeholder="Describe the issue..."
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
@@ -174,18 +163,15 @@ export const StudentTickets: React.FC<StudentTicketsProps> = ({
             {tickets.map((ticket) => (
               <li key={ticket.id} className="px-5 py-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-sm font-semibold text-slate-900">{ticket.subject}</p>
                     <p className="text-xs text-slate-500 mt-1 whitespace-pre-wrap">{ticket.message}</p>
                     <p className="text-[11px] text-slate-400 mt-2">{formatTicketTime(ticket.createdAt)}</p>
                   </div>
-                  <span
-                    className={`shrink-0 text-[11px] font-bold uppercase tracking-wide px-2 py-1 rounded-md border ${STATUS_STYLES[ticket.status]}`}
-                  >
-                    {STATUS_LABELS[ticket.status]}
-                  </span>
+                  <TicketStatusBadge status={ticket.status} />
                 </div>
-                {ticket.status !== 'pending' && ticket.teacherNote && (
+                <TicketProgress status={ticket.status} />
+                {ticket.status !== 'open' && ticket.teacherNote && (
                   <p className="mt-3 text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
                     Teacher: {ticket.teacherNote}
                   </p>

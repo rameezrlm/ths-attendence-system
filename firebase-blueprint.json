@@ -100,7 +100,7 @@
         "message": { "type": "string" },
         "status": {
           "type": "string",
-          "enum": ["pending", "approved", "rejected"]
+          "enum": ["open", "approved", "in_progress", "resolved"]
         },
         "teacherNote": { "type": "string" },
         "resolvedBy": { "type": "string" },

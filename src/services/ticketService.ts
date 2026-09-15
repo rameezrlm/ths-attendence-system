@@ -4,6 +4,27 @@ import type { Ticket, TicketStatus } from '../types';
 
 const TICKETS_KEY = 'it_lab_tickets';
 
+export const TICKET_STATUSES: TicketStatus[] = [
+  'open',
+  'approved',
+  'in_progress',
+  'resolved',
+];
+
+export const TICKET_STATUS_LABELS: Record<TicketStatus, string> = {
+  open: 'New issue',
+  approved: 'Issue approved',
+  in_progress: 'In progress',
+  resolved: 'Work done / resolved',
+};
+
+export const TICKET_STATUS_STYLES: Record<TicketStatus, string> = {
+  open: 'bg-slate-100 text-slate-700 border-slate-200',
+  approved: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  in_progress: 'bg-amber-50 text-amber-800 border-amber-200',
+  resolved: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+};
+
 function newId(): string {
   return `tk_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 }
@@ -29,6 +50,16 @@ function sortTickets(list: Ticket[]): Ticket[] {
   return [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+export function normalizeTicketStatus(status: string | undefined): TicketStatus {
+  if (status === 'approved' || status === 'in_progress' || status === 'resolved' || status === 'open') {
+    return status;
+  }
+  if (status === 'pending' || status === 'rejected') {
+    return 'open';
+  }
+  return 'open';
+}
+
 async function persistTicket(ticket: Ticket): Promise<void> {
   if (isFirebaseConfigured && db) {
     try {
@@ -40,6 +71,14 @@ async function persistTicket(ticket: Ticket): Promise<void> {
 }
 
 export async function fetchTickets(): Promise<Ticket[]> {
+  const hydrate = (list: Ticket[]) =>
+    sortTickets(
+      list.map((ticket) => ({
+        ...ticket,
+        status: normalizeTicketStatus(ticket.status),
+      }))
+    );
+
   if (isFirebaseConfigured && db) {
     try {
       const snap = await getDocs(collection(db, 'tickets'));
@@ -48,11 +87,12 @@ export async function fetchTickets(): Promise<Ticket[]> {
         snap.forEach((d) => {
           list.push({ ...(d.data() as Ticket), id: d.id });
         });
-        writeTickets(list);
-        return sortTickets(list);
+        const normalized = hydrate(list);
+        writeTickets(normalized);
+        return normalized;
       }
 
-      const local = readTickets();
+      const local = hydrate(readTickets());
       if (local.length > 0) {
         for (const ticket of local) {
           try {
@@ -61,18 +101,18 @@ export async function fetchTickets(): Promise<Ticket[]> {
             console.error('Error migrating ticket to Firestore:', e);
           }
         }
-        return sortTickets(local);
+        return local;
       }
 
       writeTickets([]);
       return [];
     } catch (err) {
       console.warn('Error fetching tickets from Firestore, using local:', err);
-      return sortTickets(readTickets());
+      return hydrate(readTickets());
     }
   }
 
-  return sortTickets(readTickets());
+  return hydrate(readTickets());
 }
 
 export async function fetchStudentTickets(studentId: string): Promise<Ticket[]> {
@@ -104,7 +144,7 @@ export async function createTicket(input: {
     studentEmail: input.studentEmail,
     subject,
     message,
-    status: 'pending',
+    status: 'open',
     seenByStudent: true,
     createdAt: now,
     updatedAt: now,
@@ -116,10 +156,23 @@ export async function createTicket(input: {
   return ticket;
 }
 
-export async function resolveTicket(
+export function nextTicketStatus(status: TicketStatus): TicketStatus | null {
+  if (status === 'open') return 'approved';
+  if (status === 'approved') return 'in_progress';
+  if (status === 'in_progress') return 'resolved';
+  return null;
+}
+
+export function nextTicketActionLabel(status: TicketStatus): string | null {
+  if (status === 'open') return 'Approve issue';
+  if (status === 'approved') return 'Start progress';
+  if (status === 'in_progress') return 'Mark work done';
+  return null;
+}
+
+export async function advanceTicketStatus(
   ticketId: string,
-  status: Exclude<TicketStatus, 'pending'>,
-  resolvedBy: string,
+  teacherName: string,
   teacherNote?: string
 ): Promise<Ticket> {
   const list = await fetchTickets();
@@ -128,13 +181,20 @@ export async function resolveTicket(
     throw new Error('Ticket not found');
   }
 
+  const current = list[index];
+  const next = nextTicketStatus(current.status);
+  if (!next) {
+    throw new Error('This ticket is already resolved.');
+  }
+
   const now = new Date().toISOString();
+  const note = teacherNote?.trim();
   const updated: Ticket = {
-    ...list[index],
-    status,
-    teacherNote: teacherNote?.trim() || '',
-    resolvedBy,
-    resolvedAt: now,
+    ...current,
+    status: next,
+    teacherNote: note || current.teacherNote || '',
+    resolvedBy: teacherName,
+    resolvedAt: next === 'resolved' ? now : current.resolvedAt,
     seenByStudent: false,
     updatedAt: now,
   };
@@ -151,7 +211,7 @@ export async function markStudentTicketsSeen(studentId: string): Promise<void> {
   let changed = false;
 
   const next = list.map((ticket) => {
-    if (ticket.studentId !== studentId || ticket.status === 'pending' || ticket.seenByStudent) {
+    if (ticket.studentId !== studentId || ticket.status === 'open' || ticket.seenByStudent) {
       return ticket;
     }
     changed = true;
@@ -166,12 +226,12 @@ export async function markStudentTicketsSeen(studentId: string): Promise<void> {
 }
 
 export function pendingTicketCount(tickets: Ticket[]): number {
-  return tickets.filter((t) => t.status === 'pending').length;
+  return tickets.filter((t) => t.status !== 'resolved').length;
 }
 
 export function unreadNotificationCount(tickets: Ticket[], studentId: string): number {
   return tickets.filter(
-    (t) => t.studentId === studentId && t.status !== 'pending' && !t.seenByStudent
+    (t) => t.studentId === studentId && t.status !== 'open' && !t.seenByStudent
   ).length;
 }
 

@@ -167,30 +167,34 @@ export async function updateStudent(
   return updated;
 }
 
-export async function updateStudentProfile(
-  id: string,
-  data: { email: string; contact: string; password?: string }
-): Promise<Student> {
+export async function updateStudentPassword(id: string, password: string): Promise<Student> {
   const current = await fetchStudents();
-  const existing = current.find((s) => s.id === id);
-  if (!existing) {
+  const index = current.findIndex((s) => s.id === id);
+  if (index === -1) {
     throw new Error('Student not found');
   }
 
-  const email = data.email.trim().toLowerCase();
-  if (!email || !email.includes('@')) {
-    throw new Error('Please enter a valid email address.');
-  }
-
-  if (current.some((s) => s.id !== id && s.email.toLowerCase() === email)) {
-    throw new Error('Another student with this email already exists.');
-  }
-
-  const password = data.password?.trim();
-  if (password && password.length < 4) {
+  const nextPassword = password.trim();
+  if (nextPassword.length < 4) {
     throw new Error('Password must be at least 4 characters.');
   }
 
-  return updateStudent(id, existing.name, email, password, data.contact);
+  const updated: Student = {
+    ...current[index],
+    password: nextPassword,
+  };
+
+  current[index] = updated;
+  saveLocalStudents(current);
+
+  if (isFirebaseConfigured && db) {
+    try {
+      await updateDoc(doc(db, 'students', id), { password: nextPassword });
+    } catch (err) {
+      console.error('Error updating student password in Firestore:', err);
+    }
+  }
+
+  return updated;
 }
 

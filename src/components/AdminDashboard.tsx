@@ -13,6 +13,7 @@ import {
   ArrowLeft,
   ChevronRight,
   Pencil,
+  KeyRound,
   Plus,
   X,
 } from 'lucide-react';
@@ -20,7 +21,7 @@ import {
   fetchStudents,
   addStudent,
   deleteStudent,
-  updateStudent,
+  updateStudentPassword,
 } from '../services/studentService';
 import {
   fetchTeachers,
@@ -68,9 +69,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [studentError, setStudentError] = useState<string | null>(null);
 
   const [studentToEdit, setStudentToEdit] = useState<Student | null>(null);
-  const [editStudentName, setEditStudentName] = useState('');
-  const [editStudentEmail, setEditStudentEmail] = useState('');
-  const [editStudentContact, setEditStudentContact] = useState('');
   const [editStudentPassword, setEditStudentPassword] = useState('');
   const [showEditStudentPassword, setShowEditStudentPassword] = useState(false);
   const [isUpdatingStudent, setIsUpdatingStudent] = useState(false);
@@ -184,10 +182,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleOpenEditStudent = (student: Student) => {
     setStudentToEdit(student);
-    setEditStudentName(student.name);
-    setEditStudentEmail(student.email);
-    setEditStudentContact(student.contact || '');
-    setEditStudentPassword(student.password || '');
+    setEditStudentPassword('');
     setEditStudentError(null);
     setShowEditStudentPassword(false);
   };
@@ -197,12 +192,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!studentToEdit) return;
     setEditStudentError(null);
 
-    const name = editStudentName.trim();
-    const email = editStudentEmail.trim().toLowerCase();
     const password = editStudentPassword.trim();
 
-    if (!name || !email || !password) {
-      setEditStudentError('Please fill in name, email, and password.');
+    if (!password) {
+      setEditStudentError('Please enter a new password.');
       return;
     }
 
@@ -211,30 +204,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
 
-    // Check if another student has this email
-    if (students.some((s) => s.id !== studentToEdit.id && s.email.toLowerCase() === email)) {
-      setEditStudentError('Another student with this email already exists.');
-      return;
-    }
-
     try {
       setIsUpdatingStudent(true);
-      const updated = await updateStudent(
-        studentToEdit.id,
-        name,
-        email,
-        password,
-        editStudentContact
-      );
-      setStudents((prev) => {
-        const next = prev.map((s) => (s.id === updated.id ? updated : s));
-        next.sort((a, b) => a.name.localeCompare(b.name));
-        return next;
-      });
+      const updated = await updateStudentPassword(studentToEdit.id, password);
+      setStudents((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
       setStudentToEdit(null);
-      showToast('success', `Student "${name}" updated successfully.`);
+      showToast('success', `Password reset for "${updated.name}".`);
     } catch {
-      setEditStudentError('Failed to update student. Please try again.');
+      setEditStudentError('Failed to reset password. Please try again.');
     } finally {
       setIsUpdatingStudent(false);
     }
@@ -604,7 +581,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </span>
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Add new admissions, edit student profiles, or remove entries.
+                    Add new admissions, reset a student password, or remove entries.
                   </p>
                 </div>
 
@@ -716,15 +693,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </td>
                           <td className="py-3 px-4 text-right">
                             <div className="inline-flex items-center gap-1">
-                              {/* Edit / Update Button */}
+                              {/* Reset password */}
                               <button
                                 id={`btn-edit-student-${student.id}`}
                                 type="button"
                                 onClick={() => handleOpenEditStudent(student)}
                                 className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
-                                title={`Edit ${student.name}`}
+                                title={`Reset password for ${student.name}`}
                               >
-                                <Pencil className="w-3.5 h-3.5" />
+                                <KeyRound className="w-3.5 h-3.5" />
                               </button>
 
                               {/* Delete Button */}
@@ -1089,11 +1066,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                  <Pencil className="w-4 h-4" />
+                  <KeyRound className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Update Student</h3>
-                  <p className="text-[11px] text-slate-400">Edit name, email, or login password</p>
+                  <h3 className="text-sm font-bold text-slate-900">Reset Password</h3>
+                  <p className="text-[11px] text-slate-400">Profile details are locked. Password only.</p>
                 </div>
               </div>
               <button
@@ -1117,44 +1094,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Full Name
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={editStudentName}
-                  onChange={(e) => setEditStudentName(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+                <p className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
+                  {studentToEdit.name}
+                </p>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Email Address
                 </label>
-                <input
-                  type="email"
-                  required
-                  value={editStudentEmail}
-                  onChange={(e) => setEditStudentEmail(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+                <p className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
+                  {studentToEdit.email}
+                </p>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Contact
                 </label>
-                <input
-                  type="tel"
-                  placeholder="e.g. 0300 1234567"
-                  value={editStudentContact}
-                  onChange={(e) => setEditStudentContact(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+                <p className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
+                  {studentToEdit.contact || '—'}
+                </p>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Login Password
+                  New Login Password
                 </label>
                 <div className="relative">
                   <input
@@ -1163,6 +1128,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     minLength={4}
                     value={editStudentPassword}
                     onChange={(e) => setEditStudentPassword(e.target.value)}
+                    placeholder="Enter a new password"
                     className="w-full pl-3 pr-9 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                   <button
@@ -1193,7 +1159,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   disabled={isUpdatingStudent}
                   className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  <span>{isUpdatingStudent ? 'Saving...' : 'Save Changes'}</span>
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span>{isUpdatingStudent ? 'Saving...' : 'Reset Password'}</span>
                 </button>
               </div>
             </form>

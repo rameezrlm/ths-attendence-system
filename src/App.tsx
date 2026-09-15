@@ -16,7 +16,7 @@ import {
   getAttendanceByDate,
   saveAttendanceForDate,
 } from './services/attendanceService';
-import { getCurrentSession, logoutUser, saveSession } from './services/teacherService';
+import { getCurrentSession, logoutUser } from './services/teacherService';
 import {
   fetchTickets,
   pendingTicketCount,
@@ -320,19 +320,7 @@ export default function App() {
               Your student account could not be loaded. Please sign out and sign in again.
             </div>
           ) : studentView === 'profile' ? (
-            <StudentProfile
-              studentId={session.studentId}
-              session={session}
-              onProfileUpdated={(student) => {
-                const nextSession: UserSession = {
-                  ...session,
-                  email: student.email,
-                  name: student.name,
-                };
-                saveSession(nextSession);
-                setSession(nextSession);
-              }}
-            />
+            <StudentProfile studentId={session.studentId} session={session} />
           ) : studentView === 'tickets' ? (
             <StudentTickets
               studentId={session.studentId}

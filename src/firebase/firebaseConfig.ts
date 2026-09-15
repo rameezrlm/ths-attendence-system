@@ -1,6 +1,7 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, signInAnonymously, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getStorage, type FirebaseStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 export const isFirebaseConfigured: boolean = Boolean(
@@ -13,6 +14,7 @@ export const isFirebaseConfigured: boolean = Boolean(
 let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
 let auth: Auth | null = null;
+let storage: FirebaseStorage | null = null;
 
 if (isFirebaseConfigured) {
   try {
@@ -27,6 +29,12 @@ if (isFirebaseConfigured) {
 
     db = dbId ? getFirestore(app, dbId) : getFirestore(app);
     auth = getAuth(app);
+    try {
+      storage = firebaseConfig.storageBucket ? getStorage(app) : null;
+    } catch (err) {
+      console.warn('Firebase Storage unavailable:', err);
+      storage = null;
+    }
 
     // Attempt anonymous sign-in in background so request.auth is populated if enabled
     if (auth && !auth.currentUser) {
@@ -39,5 +47,5 @@ if (isFirebaseConfigured) {
   }
 }
 
-export { app, db, auth };
+export { app, db, auth, storage };
 

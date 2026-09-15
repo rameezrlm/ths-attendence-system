@@ -7,6 +7,7 @@ import {
   formatTicketTime,
   nextTicketActionLabel,
   pendingTicketCount,
+  subscribeTicketUpdates,
   TICKET_STATUS_LABELS,
 } from '../services/ticketService';
 import { TicketProgress, TicketStatusBadge } from './TicketStatusBadge';
@@ -15,6 +16,7 @@ interface TeacherTicketsProps {
   session: UserSession;
   showToast: (type: 'success' | 'error', message: string) => void;
   onStatsChange?: (pending: number) => void;
+  description?: string;
 }
 
 type TicketFilter = TicketStatus | 'all';
@@ -23,6 +25,7 @@ export const TeacherTickets: React.FC<TeacherTicketsProps> = ({
   session,
   showToast,
   onStatsChange,
+  description = 'Move each ticket through Issue approved → In progress → Work done / resolved.',
 }) => {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -30,22 +33,25 @@ export const TeacherTickets: React.FC<TeacherTicketsProps> = ({
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const loadTickets = async () => {
-    setIsLoading(true);
+  const loadTickets = async (silent = false) => {
+    if (!silent) setIsLoading(true);
     try {
       const list = await fetchTickets();
       setTickets(list);
       onStatsChange?.(pendingTicketCount(list));
     } catch (err) {
       console.error('Failed to load tickets:', err);
-      showToast('error', 'Failed to load tickets.');
+      if (!silent) showToast('error', 'Failed to load tickets.');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadTickets();
+    void loadTickets();
+    return subscribeTicketUpdates(() => {
+      void loadTickets(true);
+    });
   }, []);
 
   const filtered = useMemo(() => {
@@ -83,9 +89,7 @@ export const TeacherTickets: React.FC<TeacherTicketsProps> = ({
     <div id="teacher-tickets" className="space-y-5">
       <div>
         <h2 className="text-lg font-bold text-slate-900 tracking-tight">Tickets</h2>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Move each ticket through Issue approved → In progress → Work done / resolved.
-        </p>
+        <p className="text-xs text-slate-500 mt-0.5">{description}</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

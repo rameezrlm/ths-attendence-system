@@ -42,5 +42,18 @@ service cloud.firestore {
     match /tickets/{ticketId} {
       allow read, write: if isAllowed();
     }
+
+    // Assignment files uploaded by teachers for students to download
+    match /assignments/{assignmentId} {
+      allow read, write: if isAllowed();
+    }
+
+    match /assignmentSubmissions/{submissionId} {
+      allow read, write: if isAllowed();
+    }
+
+    match /announcements/{announcementId} {
+      allow read, write: if isAllowed();
+    }
   }
 }

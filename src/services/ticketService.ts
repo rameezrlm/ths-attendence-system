@@ -1,8 +1,9 @@
-import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase/firebaseConfig';
 import type { Ticket, TicketStatus } from '../types';
 
 const TICKETS_KEY = 'it_lab_tickets';
+const TICKETS_CHANGED_EVENT = 'it-lab-tickets-changed';
 
 export const TICKET_STATUSES: TicketStatus[] = [
   'open',
@@ -38,12 +39,37 @@ function readTickets(): Ticket[] {
   }
 }
 
-function writeTickets(list: Ticket[]): void {
+function writeTickets(list: Ticket[], notify = false): void {
   try {
     localStorage.setItem(TICKETS_KEY, JSON.stringify(list));
+    if (notify && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(TICKETS_CHANGED_EVENT));
+    }
   } catch (err) {
     console.error('Failed to save tickets to localStorage', err);
   }
+}
+
+function ticketUpdatedAt(ticket: Ticket): string {
+  return ticket.updatedAt || ticket.createdAt || '';
+}
+
+function mergeTickets(remote: Ticket[], local: Ticket[]): Ticket[] {
+  const map = new Map<string, Ticket>();
+  for (const ticket of remote) {
+    map.set(ticket.id, ticket);
+  }
+  for (const ticket of local) {
+    const existing = map.get(ticket.id);
+    if (!existing || ticketUpdatedAt(ticket) >= ticketUpdatedAt(existing)) {
+      map.set(ticket.id, ticket);
+    }
+  }
+  return [...map.values()];
+}
+
+function toFirestorePayload(ticket: Ticket): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(ticket)) as Record<string, unknown>;
 }
 
 function sortTickets(list: Ticket[]): Ticket[] {
@@ -63,11 +89,43 @@ export function normalizeTicketStatus(status: string | undefined): TicketStatus 
 async function persistTicket(ticket: Ticket): Promise<void> {
   if (isFirebaseConfigured && db) {
     try {
-      await setDoc(doc(db, 'tickets', ticket.id), ticket, { merge: true });
+      await setDoc(doc(db, 'tickets', ticket.id), toFirestorePayload(ticket), { merge: true });
     } catch (err) {
       console.error(`Error saving ticket ${ticket.id} to Firestore:`, err);
     }
   }
+}
+
+export function subscribeTicketUpdates(onChange: () => void): () => void {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const trigger = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(onChange, 200);
+  };
+
+  window.addEventListener(TICKETS_CHANGED_EVENT, trigger);
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === TICKETS_KEY || event.key === null) trigger();
+  };
+  window.addEventListener('storage', onStorage);
+
+  let unsubscribeFirestore: (() => void) | undefined;
+  if (isFirebaseConfigured && db) {
+    unsubscribeFirestore = onSnapshot(
+      collection(db, 'tickets'),
+      trigger,
+      (err) => {
+        console.warn('Ticket live updates unavailable:', err);
+      }
+    );
+  }
+
+  return () => {
+    if (timer) clearTimeout(timer);
+    window.removeEventListener(TICKETS_CHANGED_EVENT, trigger);
+    window.removeEventListener('storage', onStorage);
+    unsubscribeFirestore?.();
+  };
 }
 
 export async function fetchTickets(): Promise<Ticket[]> {
@@ -83,20 +141,28 @@ export async function fetchTickets(): Promise<Ticket[]> {
     try {
       const snap = await getDocs(collection(db, 'tickets'));
       if (!snap.empty) {
-        const list: Ticket[] = [];
+        const remote: Ticket[] = [];
         snap.forEach((d) => {
-          list.push({ ...(d.data() as Ticket), id: d.id });
+          remote.push({ ...(d.data() as Ticket), id: d.id });
         });
-        const normalized = hydrate(list);
-        writeTickets(normalized);
-        return normalized;
+        const local = hydrate(readTickets());
+        const merged = hydrate(mergeTickets(remote, local));
+        writeTickets(merged);
+
+        for (const ticket of merged) {
+          const remoteTicket = remote.find((item) => item.id === ticket.id);
+          if (!remoteTicket || ticketUpdatedAt(ticket) > ticketUpdatedAt(remoteTicket)) {
+            void persistTicket(ticket);
+          }
+        }
+        return merged;
       }
 
       const local = hydrate(readTickets());
       if (local.length > 0) {
         for (const ticket of local) {
           try {
-            await setDoc(doc(db, 'tickets', ticket.id), ticket);
+            await setDoc(doc(db, 'tickets', ticket.id), toFirestorePayload(ticket));
           } catch (e) {
             console.error('Error migrating ticket to Firestore:', e);
           }
@@ -151,7 +217,7 @@ export async function createTicket(input: {
   };
 
   const list = await fetchTickets();
-  writeTickets([ticket, ...list]);
+  writeTickets([ticket, ...list], true);
   await persistTicket(ticket);
   return ticket;
 }
@@ -194,20 +260,25 @@ export async function advanceTicketStatus(
     status: next,
     teacherNote: note || current.teacherNote || '',
     resolvedBy: teacherName,
-    resolvedAt: next === 'resolved' ? now : current.resolvedAt,
     seenByStudent: false,
     updatedAt: now,
   };
+  if (next === 'resolved') {
+    updated.resolvedAt = now;
+  } else if (current.resolvedAt) {
+    updated.resolvedAt = current.resolvedAt;
+  } else {
+    delete updated.resolvedAt;
+  }
 
   list[index] = updated;
-  writeTickets(list);
+  writeTickets(list, true);
   await persistTicket(updated);
   return updated;
 }
 
 export async function markStudentTicketsSeen(studentId: string): Promise<void> {
   const list = await fetchTickets();
-  const now = new Date().toISOString();
   let changed = false;
 
   const next = list.map((ticket) => {
@@ -215,13 +286,13 @@ export async function markStudentTicketsSeen(studentId: string): Promise<void> {
       return ticket;
     }
     changed = true;
-    const updated: Ticket = { ...ticket, seenByStudent: true, updatedAt: now };
+    const updated: Ticket = { ...ticket, seenByStudent: true };
     void persistTicket(updated);
     return updated;
   });
 
   if (changed) {
-    writeTickets(next);
+    writeTickets(next, true);
   }
 }
 

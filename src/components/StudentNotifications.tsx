@@ -5,6 +5,7 @@ import {
   fetchStudentTickets,
   formatTicketTime,
   markStudentTicketsSeen,
+  subscribeTicketUpdates,
   TICKET_STATUS_LABELS,
 } from '../services/ticketService';
 import { TicketProgress, TicketStatusBadge } from './TicketStatusBadge';
@@ -23,8 +24,9 @@ export const StudentNotifications: React.FC<StudentNotificationsProps> = ({
 
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
-      setIsLoading(true);
+
+    const load = async (silent = false) => {
+      if (!silent) setIsLoading(true);
       try {
         const list = await fetchStudentTickets(studentId);
         if (cancelled) return;
@@ -34,12 +36,17 @@ export const StudentNotifications: React.FC<StudentNotificationsProps> = ({
       } catch (err) {
         console.error('Failed to load notifications:', err);
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled && !silent) setIsLoading(false);
       }
     };
-    load();
+
+    void load();
+    const unsubscribe = subscribeTicketUpdates(() => {
+      void load(true);
+    });
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [studentId]);
 
@@ -71,7 +78,7 @@ export const StudentNotifications: React.FC<StudentNotificationsProps> = ({
           <Bell className="w-8 h-8 text-slate-300 mx-auto mb-2" />
           <p className="text-sm font-semibold text-slate-800">No notifications yet</p>
           <p className="text-xs text-slate-500 mt-1">
-            You will be notified when a teacher approves an issue or updates its progress.
+            You will be notified when admin approves an issue or updates its progress.
           </p>
         </div>
       ) : (
@@ -97,7 +104,7 @@ export const StudentNotifications: React.FC<StudentNotificationsProps> = ({
               <TicketProgress status={ticket.status} />
               {ticket.teacherNote && (
                 <p className="mt-3 text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-                  Teacher note: {ticket.teacherNote}
+                  Note: {ticket.teacherNote}
                 </p>
               )}
               <p className="text-[11px] text-slate-400 mt-2">

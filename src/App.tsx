@@ -11,6 +11,10 @@ import { StudentProfile } from './components/StudentProfile';
 import { StudentTickets } from './components/StudentTickets';
 import { StudentNotifications } from './components/StudentNotifications';
 import { TeacherTickets } from './components/TeacherTickets';
+import { TeacherAssignments } from './components/TeacherAssignments';
+import { StudentAssignments } from './components/StudentAssignments';
+import { TeacherAnnouncements } from './components/TeacherAnnouncements';
+import { StudentAnnouncements } from './components/StudentAnnouncements';
 import { fetchStudents } from './services/studentService';
 import {
   getAttendanceByDate,
@@ -21,6 +25,7 @@ import {
   fetchTickets,
   pendingTicketCount,
   unreadNotificationCount,
+  subscribeTicketUpdates,
 } from './services/ticketService';
 import type {
   Student,
@@ -69,9 +74,11 @@ export default function App() {
   const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilter>('all');
 
   // Teacher workspace: Gradebook or existing Attendance section
-  const [teacherView, setTeacherView] = useState<'gradebook' | 'attendance' | 'tickets'>('gradebook');
+  const [teacherView, setTeacherView] = useState<
+    'gradebook' | 'assignments' | 'attendance' | 'tickets' | 'announcements'
+  >('gradebook');
   const [studentView, setStudentView] = useState<
-    'gradebook' | 'tickets' | 'notifications' | 'profile'
+    'gradebook' | 'assignments' | 'tickets' | 'notifications' | 'announcements' | 'profile'
   >('gradebook');
   const [pendingTickets, setPendingTickets] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -138,9 +145,13 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (session && (session.role === 'teacher' || session.role === 'student')) {
-      refreshTicketStats();
+    if (!session || (session.role !== 'teacher' && session.role !== 'student')) {
+      return;
     }
+    void refreshTicketStats();
+    return subscribeTicketUpdates(() => {
+      void refreshTicketStats();
+    });
   }, [session]);
 
   // Live Summary calculation for Teacher view
@@ -235,7 +246,7 @@ export default function App() {
   const todayDisplay = formatDateToDisplay(todayISO);
   const currentDateObj = new Date();
 
-  // 2. Admin Role: Show Admin Dashboard ONLY (No attendance, just Student & Teacher management)
+  // 2. Admin Role: Show Admin Dashboard (students, teachers, tickets)
   if (session.role === 'admin') {
     return (
       <AdminDashboard
@@ -271,6 +282,30 @@ export default function App() {
               }`}
             >
               Gradebook
+            </button>
+            <button
+              id="tab-student-assignments"
+              type="button"
+              onClick={() => setStudentView('assignments')}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                studentView === 'assignments'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              Assignments
+            </button>
+            <button
+              id="tab-student-announcements"
+              type="button"
+              onClick={() => setStudentView('announcements')}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                studentView === 'announcements'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              Announcements
             </button>
             <button
               id="tab-student-tickets"
@@ -321,6 +356,14 @@ export default function App() {
             </div>
           ) : studentView === 'profile' ? (
             <StudentProfile studentId={session.studentId} session={session} />
+          ) : studentView === 'assignments' ? (
+            <StudentAssignments
+              studentId={session.studentId}
+              studentName={session.name}
+              studentEmail={session.email}
+            />
+          ) : studentView === 'announcements' ? (
+            <StudentAnnouncements />
           ) : studentView === 'tickets' ? (
             <StudentTickets
               studentId={session.studentId}
@@ -392,6 +435,30 @@ export default function App() {
             Gradebook
           </button>
           <button
+            id="tab-assignments"
+            type="button"
+            onClick={() => setTeacherView('assignments')}
+            className={`px-5 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+              teacherView === 'assignments'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            Assignments
+          </button>
+          <button
+            id="tab-announcements"
+            type="button"
+            onClick={() => setTeacherView('announcements')}
+            className={`px-5 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+              teacherView === 'announcements'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            Announcements
+          </button>
+          <button
             id="tab-attendance"
             type="button"
             onClick={() => setTeacherView('attendance')}
@@ -425,6 +492,18 @@ export default function App() {
         {teacherView === 'gradebook' && (
           <section id="section-gradebook" aria-label="Teacher Gradebook">
             <TeacherGradebook students={students} showToast={showToast} />
+          </section>
+        )}
+
+        {teacherView === 'assignments' && (
+          <section id="section-assignments" aria-label="Teacher Assignments">
+            <TeacherAssignments session={session} showToast={showToast} />
+          </section>
+        )}
+
+        {teacherView === 'announcements' && (
+          <section id="section-announcements" aria-label="Teacher Announcements">
+            <TeacherAnnouncements session={session} showToast={showToast} />
           </section>
         )}
 

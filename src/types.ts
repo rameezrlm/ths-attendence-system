@@ -85,6 +85,44 @@ export interface GradeMark {
 
 export type TicketStatus = 'open' | 'approved' | 'in_progress' | 'resolved';
 
+export interface AssignmentMaterial {
+  id: string;
+  title: string;
+  description: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  fileUrl: string;
+  storagePath: string;
+  uploadedBy: string;
+  createdAt: string;
+  closesAt: string;
+  localOnly?: boolean;
+}
+
+export interface AssignmentSubmission {
+  id: string;
+  assignmentId: string;
+  studentId: string;
+  studentName: string;
+  studentEmail: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  fileUrl: string;
+  storagePath: string;
+  submittedAt: string;
+  localOnly?: boolean;
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  message: string;
+  createdBy: string;
+  createdAt: string;
+}
+
 export interface Ticket {
   id: string;
   studentId: string;

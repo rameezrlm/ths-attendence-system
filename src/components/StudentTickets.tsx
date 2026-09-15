@@ -5,6 +5,7 @@ import {
   createTicket,
   fetchStudentTickets,
   formatTicketTime,
+  subscribeTicketUpdates,
 } from '../services/ticketService';
 import { TicketProgress, TicketStatusBadge } from './TicketStatusBadge';
 
@@ -29,21 +30,24 @@ export const StudentTickets: React.FC<StudentTicketsProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const loadTickets = async () => {
-    setIsLoading(true);
+  const loadTickets = async (silent = false) => {
+    if (!silent) setIsLoading(true);
     try {
       const list = await fetchStudentTickets(studentId);
       setTickets(list);
     } catch (err) {
       console.error('Failed to load tickets:', err);
-      setError('Failed to load tickets.');
+      if (!silent) setError('Failed to load tickets.');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadTickets();
+    void loadTickets();
+    return subscribeTicketUpdates(() => {
+      void loadTickets(true);
+    });
   }, [studentId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -77,7 +81,7 @@ export const StudentTickets: React.FC<StudentTicketsProps> = ({
       <div>
         <h2 className="text-lg font-bold text-slate-900 tracking-tight">Tickets</h2>
         <p className="text-xs text-slate-500 mt-0.5">
-          Post an issue. Your teacher will move it through Issue approved, In progress, then Work done.
+          Post an issue. Admin will move it through Issue approved, In progress, then Work done.
         </p>
       </div>
 
@@ -156,7 +160,7 @@ export const StudentTickets: React.FC<StudentTicketsProps> = ({
           <div className="p-10 text-center">
             <TicketIcon className="w-8 h-8 text-slate-300 mx-auto mb-2" />
             <p className="text-sm font-semibold text-slate-700">No tickets yet</p>
-            <p className="text-xs text-slate-400 mt-1">Post a ticket above to send it to your teacher.</p>
+            <p className="text-xs text-slate-400 mt-1">Post a ticket above to send it to admin.</p>
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">
@@ -173,7 +177,7 @@ export const StudentTickets: React.FC<StudentTicketsProps> = ({
                 <TicketProgress status={ticket.status} />
                 {ticket.status !== 'open' && ticket.teacherNote && (
                   <p className="mt-3 text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-                    Teacher: {ticket.teacherNote}
+                    Note: {ticket.teacherNote}
                   </p>
                 )}
               </li>

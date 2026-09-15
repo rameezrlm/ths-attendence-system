@@ -16,6 +16,7 @@ import {
   KeyRound,
   Plus,
   X,
+  Ticket as TicketIcon,
 } from 'lucide-react';
 import {
   fetchStudents,
@@ -29,6 +30,8 @@ import {
   deleteTeacher,
   updateTeacher,
 } from '../services/teacherService';
+import { fetchTickets, pendingTicketCount } from '../services/ticketService';
+import { TeacherTickets } from './TeacherTickets';
 import type { Student, Teacher, UserSession } from '../types';
 
 interface AdminDashboardProps {
@@ -37,7 +40,7 @@ interface AdminDashboardProps {
   todayDisplay: string;
 }
 
-type AdminViewMode = 'overview' | 'students' | 'teachers';
+type AdminViewMode = 'overview' | 'students' | 'teachers' | 'tickets';
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   session,
@@ -50,6 +53,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [isLoadingStudents, setIsLoadingStudents] = useState(true);
   const [isLoadingTeachers, setIsLoadingTeachers] = useState(true);
+  const [pendingTickets, setPendingTickets] = useState(0);
 
   // Search states
   const [studentSearch, setStudentSearch] = useState('');
@@ -127,6 +131,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       showToast('error', 'Failed to load teachers.');
     } finally {
       setIsLoadingTeachers(false);
+    }
+
+    try {
+      const tickets = await fetchTickets();
+      setPendingTickets(pendingTicketCount(tickets));
+    } catch (err) {
+      console.error('Failed to load tickets:', err);
     }
   };
 
@@ -451,12 +462,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 Administration Console
               </h2>
               <p className="text-xs text-slate-500 mt-1">
-                Select a section to add, edit, or delete records.
+                Manage students, teachers, and student tickets.
               </p>
             </div>
 
-            {/* TWO PRIMARY INTERACTIVE CARDS: TEACHERS & STUDENTS */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* PRIMARY CARDS: STUDENTS, TEACHERS, TICKETS */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Card 1: Students */}
               <div
                 id="card-open-students"
@@ -516,6 +527,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <ChevronRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
                 </div>
               </div>
+
+              {/* Card 3: Tickets */}
+              <div
+                id="card-open-tickets"
+                onClick={() => setViewMode('tickets')}
+                className="group bg-white rounded-2xl border border-slate-200 p-6 shadow-xs hover:shadow-md hover:border-amber-400 transition-all cursor-pointer flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:scale-105 group-hover:bg-amber-600 group-hover:text-white transition-all shadow-xs">
+                      <TicketIcon className="w-6 h-6" />
+                    </div>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-100">
+                      {pendingTickets} Open
+                    </span>
+                  </div>
+
+                  <h3 className="text-base font-bold text-slate-900 group-hover:text-amber-600 transition-colors">
+                    Tickets
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                    Review student issues and update status. Students are notified when a ticket is approved, in progress, or resolved.
+                  </p>
+                </div>
+
+                <div className="pt-6 mt-6 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-amber-600 group-hover:text-amber-700">
+                  <span>Open Ticket Inbox</span>
+                  <ChevronRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -565,6 +606,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
                 >
                   Teachers ({teachers.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('tickets')}
+                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
+                >
+                  Tickets ({pendingTickets})
                 </button>
               </div>
             </div>
@@ -772,6 +820,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 >
                   Teachers ({teachers.length})
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('tickets')}
+                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
+                >
+                  Tickets ({pendingTickets})
+                </button>
               </div>
             </div>
 
@@ -919,6 +974,69 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* VIEW 4: STUDENT TICKETS */}
+        {viewMode === 'tickets' && (
+          <div className="space-y-6 animate-in fade-in duration-150">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('overview')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to Overview</span>
+                </button>
+
+                <div className="h-4 w-px bg-slate-200" />
+
+                <div className="flex items-center gap-1 text-xs">
+                  <span className="text-slate-400">Admin</span>
+                  <span className="text-slate-300">/</span>
+                  <span className="font-semibold text-slate-800">Tickets</span>
+                </div>
+              </div>
+
+              <div className="inline-flex p-0.5 bg-slate-200/80 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('overview')}
+                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
+                >
+                  Overview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('students')}
+                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
+                >
+                  Students ({students.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('teachers')}
+                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
+                >
+                  Teachers ({teachers.length})
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-1 text-xs font-semibold bg-white text-amber-700 rounded-md shadow-xs cursor-default"
+                >
+                  Tickets ({pendingTickets})
+                </button>
+              </div>
+            </div>
+
+            <TeacherTickets
+              session={session}
+              showToast={showToast}
+              onStatsChange={setPendingTickets}
+              description="Student tickets land here. Update the status and the student is notified in their Notifications tab."
+            />
           </div>
         )}
       </main>

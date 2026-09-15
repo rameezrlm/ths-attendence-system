@@ -110,6 +110,59 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["studentId", "studentName", "subject", "message", "status"]
+    },
+    "AssignmentMaterial": {
+      "title": "AssignmentMaterial",
+      "description": "A document or slides file uploaded by a teacher for students to download",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileType": { "type": "string" },
+        "fileSize": { "type": "number" },
+        "fileUrl": { "type": "string" },
+        "storagePath": { "type": "string" },
+        "uploadedBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "closesAt": { "type": "string" },
+        "localOnly": { "type": "boolean" }
+      },
+      "required": ["title", "description", "fileName", "closesAt"]
+    },
+    "AssignmentSubmission": {
+      "title": "AssignmentSubmission",
+      "description": "Student work submitted for an assignment before the close time",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "assignmentId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentEmail": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileType": { "type": "string" },
+        "fileSize": { "type": "number" },
+        "fileUrl": { "type": "string" },
+        "storagePath": { "type": "string" },
+        "submittedAt": { "type": "string" },
+        "localOnly": { "type": "boolean" }
+      },
+      "required": ["assignmentId", "studentId", "fileName"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "A notice posted by a teacher for students to view",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "message", "createdBy"]
     }
   },
   "firestore": {
@@ -140,6 +193,18 @@
     "/tickets/{ticketId}": {
       "schema": "Ticket",
       "description": "Student tickets reviewed by teachers"
+    },
+    "/assignments/{assignmentId}": {
+      "schema": "AssignmentMaterial",
+      "description": "Assignment documents and slides uploaded by teachers"
+    },
+    "/assignmentSubmissions/{submissionId}": {
+      "schema": "AssignmentSubmission",
+      "description": "Student assignment submissions keyed by assignmentId_studentId"
+    },
+    "/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "Teacher announcements visible to students"
     }
   }
 }

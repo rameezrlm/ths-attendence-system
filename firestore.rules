@@ -22,5 +22,25 @@ service cloud.firestore {
     match /teachers/{teacherId} {
       allow read, write: if isAllowed();
     }
+
+    // Gradebook sections (Quiz, Assignment, Project, ...)
+    match /gradeSections/{sectionId} {
+      allow read, write: if isAllowed();
+    }
+
+    // Individual assessments inside a section (Quiz 1, Quiz 2, ...)
+    match /gradeAssessments/{assessmentId} {
+      allow read, write: if isAllowed();
+    }
+
+    // Student marks keyed by assessmentId_studentId
+    match /gradeMarks/{markId} {
+      allow read, write: if isAllowed();
+    }
+
+    // Student tickets reviewed by teachers
+    match /tickets/{ticketId} {
+      allow read, write: if isAllowed();
+    }
   }
 }

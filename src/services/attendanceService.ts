@@ -7,7 +7,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase/firebaseConfig';
-import type { AttendanceRecord, AttendanceStatus, Student } from '../types';
+import type { AttendanceDayEntry, AttendanceRecord, AttendanceStatus, Student } from '../types';
 
 const ATTENDANCE_STORAGE_KEY = 'it_lab_attendance';
 
@@ -28,12 +28,21 @@ function saveLocalAttendanceMap(map: Record<string, AttendanceRecord>) {
   }
 }
 
+function toDayEntry(rec: AttendanceRecord): AttendanceDayEntry {
+  return {
+    status: rec.status,
+    joinTime: rec.status === 'late' && rec.joinTime ? rec.joinTime : undefined,
+  };
+}
+
 /**
  * Fetch attendance map for a specific date (format: YYYY-MM-DD).
- * Returns: { [studentId]: AttendanceStatus }
+ * Returns: { [studentId]: { status, joinTime? } }
  */
-export async function getAttendanceByDate(dateStr: string): Promise<Record<string, AttendanceStatus>> {
-  const result: Record<string, AttendanceStatus> = {};
+export async function getAttendanceByDate(
+  dateStr: string
+): Promise<Record<string, AttendanceDayEntry>> {
+  const result: Record<string, AttendanceDayEntry> = {};
 
   if (isFirebaseConfigured && db) {
     try {
@@ -42,10 +51,9 @@ export async function getAttendanceByDate(dateStr: string): Promise<Record<strin
       snap.forEach((d) => {
         const data = d.data() as AttendanceRecord;
         if (data.studentId && data.status) {
-          result[data.studentId] = data.status;
+          result[data.studentId] = toDayEntry(data);
         }
       });
-      // Also update local cache for this date
       const local = getLocalAttendance();
       snap.forEach((d) => {
         const data = d.data() as AttendanceRecord;
@@ -58,11 +66,10 @@ export async function getAttendanceByDate(dateStr: string): Promise<Record<strin
     }
   }
 
-  // Local fallback
   const localMap = getLocalAttendance();
   Object.values(localMap).forEach((rec) => {
-    if (rec.date === dateStr && rec.studentId) {
-      result[rec.studentId] = rec.status;
+    if (rec.date === dateStr && rec.studentId && rec.status) {
+      result[rec.studentId] = toDayEntry(rec);
     }
   });
 
@@ -72,10 +79,11 @@ export async function getAttendanceByDate(dateStr: string): Promise<Record<strin
 /**
  * Save or update attendance for students on a given date.
  * Enforces: Single record per Student + Date.
+ * Stores joinTime only when the student is marked late.
  */
 export async function saveAttendanceForDate(
   dateStr: string,
-  records: { student: Student; status: AttendanceStatus }[]
+  records: { student: Student; status: AttendanceStatus; joinTime?: string }[]
 ): Promise<void> {
   const now = new Date().toISOString();
   const localMap = getLocalAttendance();
@@ -83,6 +91,8 @@ export async function saveAttendanceForDate(
   for (const item of records) {
     const attendanceId = `${item.student.id}_${dateStr}`;
     const existingRec = localMap[attendanceId];
+    const joinTime =
+      item.status === 'late' ? item.joinTime || existingRec?.joinTime || now : '';
 
     const record: AttendanceRecord = {
       id: attendanceId,
@@ -91,6 +101,7 @@ export async function saveAttendanceForDate(
       studentEmail: item.student.email,
       date: dateStr,
       status: item.status,
+      joinTime,
       createdAt: existingRec?.createdAt || now,
       updatedAt: now,
     };
@@ -122,7 +133,6 @@ export async function getMonthlyAttendance(
 
   if (isFirebaseConfigured && db) {
     try {
-      // Query records for the entire month: date >= "2026-09-01" and date <= "2026-09-31"
       const startDate = `${prefix}-01`;
       const endDate = `${prefix}-31`;
       const q = query(
@@ -141,7 +151,6 @@ export async function getMonthlyAttendance(
     }
   }
 
-  // Local fallback
   const localMap = getLocalAttendance();
   return Object.values(localMap).filter((rec) => rec.date && rec.date.startsWith(prefix));
 }

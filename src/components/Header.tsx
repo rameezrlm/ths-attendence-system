@@ -1,11 +1,10 @@
 import React from 'react';
-import { LogOut, FileSpreadsheet, User } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import type { UserSession } from '../types';
 
 interface HeaderProps {
   session: UserSession;
   onLogout: () => void;
-  onOpenMonthlyReport: () => void;
   onOpenTeacherManagement?: () => void;
   todayDisplay: string;
 }
@@ -13,7 +12,6 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   session,
   onLogout,
-  onOpenMonthlyReport,
   todayDisplay,
 }) => {
   const displayName = session.name || session.email;
@@ -45,24 +43,12 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right: Date, Monthly Register, Profile Avatar, Logout */}
+        {/* Right: Date, Profile Avatar, Logout */}
         <div className="flex items-center gap-2.5 sm:gap-4">
           {/* Today Date */}
           <span className="text-xs text-slate-500 font-medium hidden md:inline">
             {todayDisplay}
           </span>
-
-          {/* Monthly Register Button */}
-          <button
-            id="btn-open-monthly-register"
-            type="button"
-            onClick={onOpenMonthlyReport}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
-            <span className="hidden sm:inline">Monthly Register</span>
-            <span className="sm:hidden">Register</span>
-          </button>
 
           <div className="h-5 w-px bg-slate-200 hidden sm:block" />
 
@@ -74,9 +60,14 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="w-8 h-8 rounded-full bg-slate-800 text-white flex items-center justify-center text-xs font-bold shadow-xs">
               {initial}
             </div>
-            <span className="text-xs font-semibold text-slate-700 max-w-[130px] truncate hidden sm:inline">
-              {displayName}
-            </span>
+            <div className="hidden sm:block text-left">
+              <p className="text-xs font-semibold text-slate-700 max-w-[130px] truncate leading-tight">
+                {displayName}
+              </p>
+              {session.role === 'student' && (
+                <p className="text-[10px] text-slate-400 font-medium">Student</p>
+              )}
+            </div>
           </div>
 
           {/* Clean Logout */}

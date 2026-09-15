@@ -136,7 +136,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
         {/* Footer info */}
         <p className="mt-5 text-center text-xs text-slate-400">
-          IT Lab Student Attendance Management System
+          Teachers, students, and admin can sign in with their registered credentials.
         </p>
       </div>
     </div>

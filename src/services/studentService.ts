@@ -38,6 +38,8 @@ export async function fetchStudents(): Promise<Student[]> {
             id: d.id,
             name: data.name || '',
             email: data.email || '',
+            contact: data.contact || '',
+            password: data.password || '',
             createdAt: data.createdAt || new Date().toISOString(),
           });
         });
@@ -70,11 +72,18 @@ export async function fetchStudents(): Promise<Student[]> {
   return getLocalStudents();
 }
 
-export async function addStudent(name: string, email: string): Promise<Student> {
+export async function addStudent(
+  name: string,
+  email: string,
+  password: string,
+  contact = ''
+): Promise<Student> {
   const newStudent: Student = {
     id: `std_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     name: name.trim(),
     email: email.trim().toLowerCase(),
+    contact: contact.trim(),
+    password: password.trim(),
     createdAt: new Date().toISOString(),
   };
 
@@ -109,10 +118,17 @@ export async function deleteStudent(studentId: string): Promise<void> {
   }
 }
 
+export async function getStudentById(id: string): Promise<Student | null> {
+  const list = await fetchStudents();
+  return list.find((s) => s.id === id) ?? null;
+}
+
 export async function updateStudent(
   id: string,
   name: string,
-  email: string
+  email: string,
+  password?: string,
+  contact?: string
 ): Promise<Student> {
   const current = getLocalStudents();
   const index = current.findIndex((s) => s.id === id);
@@ -124,6 +140,8 @@ export async function updateStudent(
     ...current[index],
     name: name.trim(),
     email: email.trim().toLowerCase(),
+    password: password && password.trim() ? password.trim() : current[index].password,
+    contact: contact !== undefined ? contact.trim() : current[index].contact || '',
   };
 
   current[index] = updated;
@@ -132,15 +150,47 @@ export async function updateStudent(
 
   if (isFirebaseConfigured && db) {
     try {
-      await updateDoc(doc(db, 'students', id), {
+      const payload: Record<string, string> = {
         name: updated.name,
         email: updated.email,
-      });
+        contact: updated.contact || '',
+      };
+      if (password && password.trim()) {
+        payload.password = updated.password || password.trim();
+      }
+      await updateDoc(doc(db, 'students', id), payload);
     } catch (err) {
       console.error('Error updating student in Firestore:', err);
     }
   }
 
   return updated;
+}
+
+export async function updateStudentProfile(
+  id: string,
+  data: { email: string; contact: string; password?: string }
+): Promise<Student> {
+  const current = await fetchStudents();
+  const existing = current.find((s) => s.id === id);
+  if (!existing) {
+    throw new Error('Student not found');
+  }
+
+  const email = data.email.trim().toLowerCase();
+  if (!email || !email.includes('@')) {
+    throw new Error('Please enter a valid email address.');
+  }
+
+  if (current.some((s) => s.id !== id && s.email.toLowerCase() === email)) {
+    throw new Error('Another student with this email already exists.');
+  }
+
+  const password = data.password?.trim();
+  if (password && password.length < 4) {
+    throw new Error('Password must be at least 4 characters.');
+  }
+
+  return updateStudent(id, existing.name, email, password, data.contact);
 }
 

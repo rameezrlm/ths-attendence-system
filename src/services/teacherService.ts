@@ -1,5 +1,6 @@
 import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase/firebaseConfig';
+import { fetchStudents } from './studentService';
 import type { Teacher, UserSession } from '../types';
 
 const TEACHERS_STORAGE_KEY = 'it_lab_teachers';
@@ -189,6 +190,26 @@ export async function loginUser(identifier: string, password: string): Promise<U
     return session;
   }
 
+  // 3. Check Student credentials
+  const students = await fetchStudents();
+  const matchedStudent = students.find(
+    (s) =>
+      s.email.toLowerCase() === cleanId &&
+      !!s.password &&
+      s.password === cleanPass
+  );
+
+  if (matchedStudent) {
+    const session: UserSession = {
+      role: 'student',
+      name: matchedStudent.name,
+      email: matchedStudent.email,
+      studentId: matchedStudent.id,
+    };
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+    return session;
+  }
+
   throw new Error('Invalid credentials. Please check your email/username and password.');
 }
 
@@ -199,6 +220,10 @@ export function getCurrentSession(): UserSession | null {
   } catch {
     return null;
   }
+}
+
+export function saveSession(session: UserSession): void {
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
 }
 
 export function logoutUser(): void {

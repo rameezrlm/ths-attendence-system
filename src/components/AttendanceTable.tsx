@@ -1,24 +1,29 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Search,
   Save,
   CheckCircle2,
   Check,
   RotateCcw,
+  Clock,
+  FileSpreadsheet,
 } from 'lucide-react';
-import type { Student, AttendanceStatus } from '../types';
+import type { AttendanceDayEntry, AttendanceFilter, AttendanceStatus, Student } from '../types';
 
 interface AttendanceTableProps {
   students: Student[];
-  attendanceMap: Record<string, AttendanceStatus>;
+  attendanceMap: Record<string, AttendanceDayEntry>;
   todayDisplay: string;
   isLoading: boolean;
   isSaving: boolean;
   hasExistingRecords: boolean;
+  statusFilter: AttendanceFilter;
+  onStatusFilterChange: (filter: AttendanceFilter) => void;
   onStatusChange: (studentId: string, status: AttendanceStatus) => void;
   onMarkAllPresent: () => void;
   onClearAll: () => void;
   onSaveAttendance: () => Promise<void>;
+  onOpenMonthlyReport: () => void;
 }
 
 const STATUS_CONFIG: Record<
@@ -51,6 +56,16 @@ const STATUS_CONFIG: Record<
   },
 };
 
+function formatJoinTime(iso?: string): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 export const AttendanceTable: React.FC<AttendanceTableProps> = ({
   students,
   attendanceMap,
@@ -58,38 +73,100 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
   isLoading,
   isSaving,
   hasExistingRecords,
+  statusFilter,
+  onStatusFilterChange,
   onStatusChange,
   onMarkAllPresent,
   onClearAll,
   onSaveAttendance,
+  onOpenMonthlyReport,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Filter students by name or email
-  const filteredStudents = students.filter(
-    (student) =>
-      student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const presentCount = students.filter((s) => attendanceMap[s.id]?.status === 'present').length;
+  const lateCount = students.filter((s) => attendanceMap[s.id]?.status === 'late').length;
+
+  const filteredStudents = useMemo(() => {
+    return students.filter((student) => {
+      const matchesSearch =
+        student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        student.email.toLowerCase().includes(searchTerm.toLowerCase());
+      if (!matchesSearch) return false;
+
+      if (statusFilter === 'present') {
+        return attendanceMap[student.id]?.status === 'present';
+      }
+      if (statusFilter === 'late') {
+        return attendanceMap[student.id]?.status === 'late';
+      }
+      return true;
+    });
+  }, [students, searchTerm, statusFilter, attendanceMap]);
 
   const unmarkedCount = students.filter((s) => !attendanceMap[s.id]).length;
+
+  const emptyTitle = (() => {
+    if (searchTerm || statusFilter !== 'all') {
+      if (statusFilter === 'present') return 'No present students';
+      if (statusFilter === 'late') return 'No late students';
+      return 'No matching students found';
+    }
+    return 'No students enrolled';
+  })();
+
+  const emptyHint = (() => {
+    if (statusFilter === 'present') return 'Mark students as Present to see them in this filter.';
+    if (statusFilter === 'late') return 'Mark students as Late to see them in this filter.';
+    if (searchTerm) return 'Try searching with another name or email';
+    return 'Please contact the administrator to register students in the system.';
+  })();
+
+  const filters: { id: AttendanceFilter; label: string; count: number; activeClasses: string }[] = [
+    {
+      id: 'all',
+      label: 'All',
+      count: students.length,
+      activeClasses: 'bg-slate-800 text-white border-slate-800',
+    },
+    {
+      id: 'present',
+      label: 'Present',
+      count: presentCount,
+      activeClasses: 'bg-green-600 text-white border-green-600',
+    },
+    {
+      id: 'late',
+      label: 'Late',
+      count: lateCount,
+      activeClasses: 'bg-amber-600 text-white border-amber-600',
+    },
+  ];
 
   return (
     <div id="attendance-table-container" className="space-y-4">
       {/* Action Bar */}
       <div className="bg-white rounded-xl border border-slate-200 p-3 sm:p-4 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          {/* Today info - NO calendar option as teacher only marks current day */}
-          <div>
-            <h2 className="text-sm sm:text-base font-bold text-slate-900">
-              Today's Attendance
-            </h2>
-            <p className="text-xs text-slate-500">
-              {todayDisplay}
-            </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-slate-900">
+                Today's Attendance
+              </h2>
+              <p className="text-xs text-slate-500">
+                {todayDisplay}
+              </p>
+            </div>
+            <button
+              id="btn-open-monthly-register"
+              type="button"
+              onClick={onOpenMonthlyReport}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
+              <span>Monthly Register</span>
+            </button>
           </div>
 
-          {/* Search + Quick Actions */}
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             <div className="relative w-full sm:w-56">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -128,6 +205,40 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
             </button>
           </div>
         </div>
+
+        <div
+          id="attendance-status-filters"
+          className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2"
+        >
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mr-1">
+            Filter
+          </span>
+          {filters.map((filter) => {
+            const isActive = statusFilter === filter.id;
+            return (
+              <button
+                key={filter.id}
+                id={`filter-attendance-${filter.id}`}
+                type="button"
+                onClick={() => onStatusFilterChange(filter.id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
+                  isActive
+                    ? filter.activeClasses
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <span>{filter.label}</span>
+                <span
+                  className={`min-w-[1.25rem] text-center rounded-md px-1 text-[10px] font-bold ${
+                    isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  {filter.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Main Student Attendance Table */}
@@ -139,14 +250,8 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
           </div>
         ) : filteredStudents.length === 0 ? (
           <div id="table-empty-state" className="p-12 text-center text-slate-500">
-            <p className="text-sm font-semibold text-slate-700 mb-1">
-              {searchTerm ? 'No matching students found' : 'No students enrolled'}
-            </p>
-            <p className="text-xs text-slate-400">
-              {searchTerm
-                ? 'Try searching with another name or email'
-                : 'Please contact the administrator to register students in the system.'}
-            </p>
+            <p className="text-sm font-semibold text-slate-700 mb-1">{emptyTitle}</p>
+            <p className="text-xs text-slate-400">{emptyHint}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -165,11 +270,16 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
                   <th scope="col" className="py-3 px-4 text-center">
                     Status
                   </th>
+                  <th scope="col" className="py-3 px-4 text-center whitespace-nowrap">
+                    Join Time
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
                 {filteredStudents.map((student, index) => {
-                  const currentStatus = attendanceMap[student.id];
+                  const entry = attendanceMap[student.id];
+                  const currentStatus = entry?.status;
+                  const joinTimeLabel = currentStatus === 'late' ? formatJoinTime(entry?.joinTime) : '';
 
                   return (
                     <tr
@@ -220,6 +330,20 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
                           )}
                         </div>
                       </td>
+
+                      <td className="py-3 px-4 text-center">
+                        {joinTimeLabel ? (
+                          <span
+                            id={`join-time-${student.id}`}
+                            className="inline-flex items-center gap-1 text-amber-700 font-semibold bg-amber-50 px-2 py-1 rounded-md border border-amber-200"
+                          >
+                            <Clock className="w-3 h-3" />
+                            {joinTimeLabel}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -228,7 +352,6 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
           </div>
         )}
 
-        {/* Footer Bar: Validation Indicator and Save Button */}
         {students.length > 0 && (
           <div className="bg-slate-50 border-t border-slate-200 p-3 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="text-xs text-slate-600 flex items-center gap-2">

@@ -61,12 +61,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
   const [studentName, setStudentName] = useState('');
   const [studentEmail, setStudentEmail] = useState('');
+  const [studentContact, setStudentContact] = useState('');
+  const [studentPassword, setStudentPassword] = useState('');
+  const [showStudentPassword, setShowStudentPassword] = useState(false);
   const [isSubmittingStudent, setIsSubmittingStudent] = useState(false);
   const [studentError, setStudentError] = useState<string | null>(null);
 
   const [studentToEdit, setStudentToEdit] = useState<Student | null>(null);
   const [editStudentName, setEditStudentName] = useState('');
   const [editStudentEmail, setEditStudentEmail] = useState('');
+  const [editStudentContact, setEditStudentContact] = useState('');
+  const [editStudentPassword, setEditStudentPassword] = useState('');
+  const [showEditStudentPassword, setShowEditStudentPassword] = useState(false);
   const [isUpdatingStudent, setIsUpdatingStudent] = useState(false);
   const [editStudentError, setEditStudentError] = useState<string | null>(null);
 
@@ -138,9 +144,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     const name = studentName.trim();
     const email = studentEmail.trim().toLowerCase();
+    const password = studentPassword.trim();
 
-    if (!name || !email) {
-      setStudentError('Please fill in both name and email.');
+    if (!name || !email || !password) {
+      setStudentError('Please fill in name, email, and password.');
+      return;
+    }
+
+    if (password.length < 4) {
+      setStudentError('Password must be at least 4 characters.');
       return;
     }
 
@@ -151,7 +163,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     try {
       setIsSubmittingStudent(true);
-      const newStudent = await addStudent(name, email);
+      const newStudent = await addStudent(name, email, password, studentContact.trim());
       setStudents((prev) => {
         const next = [...prev, newStudent];
         next.sort((a, b) => a.name.localeCompare(b.name));
@@ -159,6 +171,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
       setStudentName('');
       setStudentEmail('');
+      setStudentContact('');
+      setStudentPassword('');
       setIsAddStudentModalOpen(false);
       showToast('success', `Student "${name}" successfully added.`);
     } catch {
@@ -172,7 +186,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setStudentToEdit(student);
     setEditStudentName(student.name);
     setEditStudentEmail(student.email);
+    setEditStudentContact(student.contact || '');
+    setEditStudentPassword(student.password || '');
     setEditStudentError(null);
+    setShowEditStudentPassword(false);
   };
 
   const handleUpdateStudentSubmit = async (e: React.FormEvent) => {
@@ -182,9 +199,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     const name = editStudentName.trim();
     const email = editStudentEmail.trim().toLowerCase();
+    const password = editStudentPassword.trim();
 
-    if (!name || !email) {
-      setEditStudentError('Please fill in both name and email.');
+    if (!name || !email || !password) {
+      setEditStudentError('Please fill in name, email, and password.');
+      return;
+    }
+
+    if (password.length < 4) {
+      setEditStudentError('Password must be at least 4 characters.');
       return;
     }
 
@@ -196,7 +219,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     try {
       setIsUpdatingStudent(true);
-      const updated = await updateStudent(studentToEdit.id, name, email);
+      const updated = await updateStudent(
+        studentToEdit.id,
+        name,
+        email,
+        password,
+        editStudentContact
+      );
       setStudents((prev) => {
         const next = prev.map((s) => (s.id === updated.id ? updated : s));
         next.sort((a, b) => a.name.localeCompare(b.name));
@@ -334,7 +363,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const filteredStudents = students.filter(
     (s) =>
       s.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
-      s.email.toLowerCase().includes(studentSearch.toLowerCase())
+      s.email.toLowerCase().includes(studentSearch.toLowerCase()) ||
+      (s.contact || '').toLowerCase().includes(studentSearch.toLowerCase())
   );
 
   const filteredTeachers = teachers.filter(
@@ -596,6 +626,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onClick={() => {
                       setStudentName('');
                       setStudentEmail('');
+                      setStudentContact('');
+                      setStudentPassword('');
+                      setShowStudentPassword(false);
                       setStudentError(null);
                       setIsAddStudentModalOpen(true);
                     }}
@@ -636,6 +669,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <th className="py-3 px-4 w-12 text-center">#</th>
                         <th className="py-3 px-4">Student Name</th>
                         <th className="py-3 px-4">Email Address</th>
+                        <th className="py-3 px-4">Contact</th>
+                        <th className="py-3 px-4">Password</th>
                         <th className="py-3 px-4">Added Date</th>
                         <th className="py-3 px-4 text-right">Actions</th>
                       </tr>
@@ -651,6 +686,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </td>
                           <td className="py-3 px-4 text-slate-600 font-mono text-[11px]">
                             {student.email}
+                          </td>
+                          <td className="py-3 px-4 text-slate-600 text-[11px]">
+                            {student.contact || '—'}
+                          </td>
+                          <td className="py-3 px-4">
+                            {student.password ? (
+                              <div className="inline-flex items-center gap-1.5 text-slate-600 bg-slate-50 px-2 py-1 rounded border border-slate-200 font-mono text-xs">
+                                <span>{visiblePasswordMap[student.id] ? student.password : '••••••••'}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => togglePasswordVisibility(student.id)}
+                                  className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                                  title={visiblePasswordMap[student.id] ? 'Hide password' : 'Show password'}
+                                >
+                                  {visiblePasswordMap[student.id] ? (
+                                    <EyeOff className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Eye className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-amber-700 text-[11px] font-medium">Not set</span>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-slate-400 text-[11px]">
                             {student.createdAt ? new Date(student.createdAt).toLocaleDateString() : '—'}
@@ -953,6 +1012,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Contact
+                </label>
+                <input
+                  type="tel"
+                  placeholder="e.g. 0300 1234567"
+                  value={studentContact}
+                  onChange={(e) => setStudentContact(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Login Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showStudentPassword ? 'text' : 'password'}
+                    required
+                    minLength={4}
+                    placeholder="Min 4 characters"
+                    value={studentPassword}
+                    onChange={(e) => setStudentPassword(e.target.value)}
+                    className="w-full pl-3 pr-9 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowStudentPassword(!showStudentPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    {showStudentPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Students use email and this password to view their gradebook.
+                </p>
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -990,7 +1093,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">Update Student</h3>
-                  <p className="text-[11px] text-slate-400">Edit name or email address</p>
+                  <p className="text-[11px] text-slate-400">Edit name, email, or login password</p>
                 </div>
               </div>
               <button
@@ -1034,6 +1137,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   onChange={(e) => setEditStudentEmail(e.target.value)}
                   className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Contact
+                </label>
+                <input
+                  type="tel"
+                  placeholder="e.g. 0300 1234567"
+                  value={editStudentContact}
+                  onChange={(e) => setEditStudentContact(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Login Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showEditStudentPassword ? 'text' : 'password'}
+                    required
+                    minLength={4}
+                    value={editStudentPassword}
+                    onChange={(e) => setEditStudentPassword(e.target.value)}
+                    className="w-full pl-3 pr-9 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEditStudentPassword(!showEditStudentPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    {showEditStudentPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">

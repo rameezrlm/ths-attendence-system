@@ -8,6 +8,8 @@
         "id": { "type": "string" },
         "name": { "type": "string" },
         "email": { "type": "string" },
+        "contact": { "type": "string" },
+        "password": { "type": "string" },
         "createdAt": { "type": "string" }
       },
       "required": ["name", "email"]
@@ -26,6 +28,7 @@
           "type": "string",
           "enum": ["present", "absent", "late", "early_left"]
         },
+        "joinTime": { "type": "string" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
@@ -43,6 +46,70 @@
         "createdAt": { "type": "string" }
       },
       "required": ["name", "email"]
+    },
+    "GradeSection": {
+      "title": "GradeSection",
+      "description": "A gradebook section created once, e.g. Quiz or Assignment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "totalMarks": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "order": { "type": "number" }
+      },
+      "required": ["name", "totalMarks"]
+    },
+    "GradeAssessment": {
+      "title": "GradeAssessment",
+      "description": "An assessment inside a section, e.g. Quiz 1",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sectionId": { "type": "string" },
+        "name": { "type": "string" },
+        "totalMarks": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "order": { "type": "number" }
+      },
+      "required": ["sectionId", "name", "totalMarks"]
+    },
+    "GradeMark": {
+      "title": "GradeMark",
+      "description": "Marks a student received on one assessment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "assessmentId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "marks": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["assessmentId", "studentId", "marks"]
+    },
+    "Ticket": {
+      "title": "Ticket",
+      "description": "A student request reviewed by a teacher",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "studentEmail": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"]
+        },
+        "teacherNote": { "type": "string" },
+        "resolvedBy": { "type": "string" },
+        "resolvedAt": { "type": "string" },
+        "seenByStudent": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["studentId", "studentName", "subject", "message", "status"]
     }
   },
   "firestore": {
@@ -57,6 +124,22 @@
     "/teachers/{teacherId}": {
       "schema": "Teacher",
       "description": "Collection of teachers added by Admin"
+    },
+    "/gradeSections/{sectionId}": {
+      "schema": "GradeSection",
+      "description": "Gradebook sections such as Quiz, Assignment, and Project"
+    },
+    "/gradeAssessments/{assessmentId}": {
+      "schema": "GradeAssessment",
+      "description": "Individual assessments inside a grade section"
+    },
+    "/gradeMarks/{markId}": {
+      "schema": "GradeMark",
+      "description": "Student marks keyed by assessmentId_studentId"
+    },
+    "/tickets/{ticketId}": {
+      "schema": "Ticket",
+      "description": "Student tickets reviewed by teachers"
     }
   }
 }

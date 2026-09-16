@@ -1,24 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, BookOpen, Trophy } from 'lucide-react';
-import type { GradeAssessment, GradeMark, GradeSection, Student } from '../types';
+import { ChevronDown, BookOpen } from 'lucide-react';
+import type { GradeAssessment, GradeMark, GradeSection } from '../types';
 import {
-  computeClassGradebookStats,
   fetchGradeAssessments,
   fetchGradeMarks,
   fetchGradeSections,
-  formatGradePercent,
-  getGradeColorScheme,
   markKey,
-  percentToLetterGrade,
   readGradeAssessmentsLocal,
   readGradeMarksLocal,
   readGradeSectionsLocal,
 } from '../services/gradebookService';
-import { fetchStudents, readStudentsLocal } from '../services/studentService';
 
 interface StudentGradebookProps {
   classId: string;
-  classStudentIds: string[];
   studentId: string;
   studentName: string;
 }
@@ -33,13 +27,8 @@ interface SectionView {
   total: number;
 }
 
-function displayFirstName(name: string): string {
-  return name.trim().split(/\s+/)[0] || name;
-}
-
 export const StudentGradebook: React.FC<StudentGradebookProps> = ({
   classId,
-  classStudentIds,
   studentId,
   studentName,
 }) => {
@@ -47,7 +36,6 @@ export const StudentGradebook: React.FC<StudentGradebookProps> = ({
   const [sections, setSections] = useState<GradeSection[]>(() => initialSections);
   const [assessments, setAssessments] = useState<GradeAssessment[]>(() => readGradeAssessmentsLocal());
   const [marks, setMarks] = useState<GradeMark[]>(() => readGradeMarksLocal());
-  const [students, setStudents] = useState<Student[]>(() => readStudentsLocal());
   const [isLoading, setIsLoading] = useState(
     () =>
       initialSections.length === 0 &&
@@ -72,11 +60,10 @@ export const StudentGradebook: React.FC<StudentGradebookProps> = ({
     const load = async (silent: boolean) => {
       if (!silent) setIsLoading(true);
       try {
-        const [sectionList, assessmentList, markList, studentList] = await Promise.all([
+        const [sectionList, assessmentList, markList] = await Promise.all([
           fetchGradeSections(),
           fetchGradeAssessments(),
           fetchGradeMarks(),
-          fetchStudents(),
         ]);
         if (cancelled) return;
         const classSections = sectionList.filter((section) => section.classId === classId);
@@ -84,7 +71,6 @@ export const StudentGradebook: React.FC<StudentGradebookProps> = ({
         setSections(classSections);
         setAssessments(assessmentList.filter((item) => sectionIds.has(item.sectionId)));
         setMarks(markList);
-        setStudents(studentList);
 
         const initial: Record<string, boolean> = {};
         sectionList.forEach((s) => {
@@ -103,14 +89,6 @@ export const StudentGradebook: React.FC<StudentGradebookProps> = ({
       cancelled = true;
     };
   }, [classId]);
-
-  const studentNameMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    students.forEach((student) => {
-      map[student.id] = student.name;
-    });
-    return map;
-  }, [students]);
 
   const marksMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -141,29 +119,6 @@ export const StudentGradebook: React.FC<StudentGradebookProps> = ({
       .filter((view) => view.assessments.length > 0);
   }, [sections, assessments, marksMap, studentId]);
 
-  const classStats = useMemo(
-    () => computeClassGradebookStats(classStudentIds, assessments, marks),
-    [classStudentIds, assessments, marks]
-  );
-
-  const myStats = classStats.byStudentId[studentId];
-  const coursePercent = myStats?.total ? myStats.percent : null;
-  const courseGrade = coursePercent !== null ? percentToLetterGrade(coursePercent) : null;
-  const classAverageColors = getGradeColorScheme(classStats.classAveragePercent);
-  const coursePercentColors =
-    coursePercent !== null ? getGradeColorScheme(coursePercent) : getGradeColorScheme(0);
-  const courseGradeColors =
-    coursePercent !== null ? getGradeColorScheme(coursePercent) : getGradeColorScheme(0);
-
-  const topStudents = useMemo(() => {
-    return classStats.ranked.slice(0, 2).map((entry, index) => ({
-      rank: index + 1,
-      name: displayFirstName(studentNameMap[entry.studentId] || 'Student'),
-      percent: entry.percent,
-      isCurrentStudent: entry.studentId === studentId,
-    }));
-  }, [classStats.ranked, studentNameMap, studentId]);
-
   const toggle = (sectionId: string) => {
     setExpanded((prev) => ({ ...prev, [sectionId]: !prev[sectionId] }));
   };
@@ -185,85 +140,6 @@ export const StudentGradebook: React.FC<StudentGradebookProps> = ({
           Marks for {studentName}, grouped by section.
         </p>
       </div>
-
-      {assessments.length > 0 && (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div
-              className={`rounded-xl border px-4 py-3 shadow-xs ${classAverageColors.card}`}
-            >
-              <p
-                className={`text-[11px] font-semibold uppercase tracking-wider ${classAverageColors.label}`}
-              >
-                Class Average
-              </p>
-              <p className={`text-lg font-bold mt-1 ${classAverageColors.value}`}>
-                {formatGradePercent(classStats.classAveragePercent)}
-                <span className={`text-sm font-semibold ${classAverageColors.suffix}`}> / 100</span>
-              </p>
-            </div>
-            <div
-              className={`rounded-xl border px-4 py-3 shadow-xs ${coursePercentColors.card}`}
-            >
-              <p
-                className={`text-[11px] font-semibold uppercase tracking-wider ${coursePercentColors.label}`}
-              >
-                Course Percentage
-              </p>
-              <p className={`text-lg font-bold mt-1 ${coursePercentColors.value}`}>
-                {coursePercent !== null ? formatGradePercent(coursePercent) : '—'}
-                <span className={`text-sm font-semibold ${coursePercentColors.suffix}`}> / 100</span>
-              </p>
-            </div>
-            <div
-              className={`rounded-xl border px-4 py-3 shadow-xs ${courseGradeColors.card}`}
-            >
-              <p
-                className={`text-[11px] font-semibold uppercase tracking-wider ${courseGradeColors.label}`}
-              >
-                Course Grade
-              </p>
-              <p className={`text-2xl font-bold mt-0.5 ${courseGradeColors.value}`}>
-                {courseGrade ?? '—'}
-              </p>
-            </div>
-          </div>
-
-          {topStudents.length > 0 && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Trophy className="w-4 h-4 text-amber-500" />
-                <h3 className="text-sm font-bold text-slate-900">Top Performers</h3>
-              </div>
-              <div className="space-y-2">
-                {topStudents.map((student) => (
-                  <div
-                    key={`top-${student.rank}-${student.name}`}
-                    className={`flex items-center justify-between gap-3 px-3 py-2 rounded-lg border ${
-                      student.isCurrentStudent
-                        ? 'bg-indigo-50 border-indigo-200'
-                        : 'bg-slate-50 border-slate-100'
-                    }`}
-                  >
-                    <span className="text-xs font-semibold text-slate-800">
-                      {student.name}
-                      {student.isCurrentStudent && (
-                        <span className="ml-1.5 text-[10px] font-medium text-indigo-600">(You)</span>
-                      )}
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                      {formatGradePercent(student.percent)}%
-                      <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200 text-[10px] uppercase tracking-wide">
-                        Top
-                      </span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
 
       {sectionViews.length === 0 ? (
         <div className="bg-white rounded-xl border border-dashed border-slate-300 p-10 text-center">

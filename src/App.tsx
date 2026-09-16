@@ -86,7 +86,7 @@ export default function App() {
   // Teacher workspace: Gradebook or existing Attendance section
   const [teacherView, setTeacherView] = useState<
     'gradebook' | 'assignments' | 'attendance' | 'tickets' | 'announcements' | 'profile'
-  >('gradebook');
+  >('announcements');
   const [studentView, setStudentView] = useState<
     | 'gradebook'
     | 'assignments'
@@ -316,7 +316,7 @@ export default function App() {
       setStudentView('announcements');
     }
     if (session?.role === 'teacher') {
-      setTeacherView('gradebook');
+      setTeacherView('announcements');
     }
   };
 
@@ -461,7 +461,6 @@ export default function App() {
               <div className={studentView === 'gradebook' ? '' : 'hidden'}>
                 <StudentGradebook
                   classId={selectedClassId}
-                  classStudentIds={selectedClass?.studentIds || []}
                   studentId={session.studentId}
                   studentName={session.name}
                 />
@@ -543,7 +542,7 @@ export default function App() {
         onGoHome={handleGoHome}
         todayDisplay={todayDisplay}
         onOpenProfile={() =>
-          setTeacherView((prev) => (prev === 'profile' ? 'gradebook' : 'profile'))
+          setTeacherView((prev) => (prev === 'profile' ? 'announcements' : 'profile'))
         }
         isProfileActive={teacherView === 'profile'}
       />
@@ -567,7 +566,7 @@ export default function App() {
             isLoading={classesLoading}
             onSelect={(classId) => {
               setSelectedClassId(classId);
-              setTeacherView('gradebook');
+              setTeacherView('announcements');
             }}
           />
         ) : (
@@ -577,7 +576,7 @@ export default function App() {
             type="button"
             onClick={() => {
               setSelectedClassId(null);
-              setTeacherView('gradebook');
+              setTeacherView('announcements');
             }}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
           >
@@ -592,16 +591,16 @@ export default function App() {
           className="inline-flex flex-wrap p-1 bg-white border border-slate-200 rounded-xl shadow-xs"
         >
           <button
-            id="tab-gradebook"
+            id="tab-announcements"
             type="button"
-            onClick={() => setTeacherView('gradebook')}
+            onClick={() => setTeacherView('announcements')}
             className={`px-5 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-              teacherView === 'gradebook'
+              teacherView === 'announcements'
                 ? 'bg-emerald-600 text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
-            Gradebook
+            Announcements
           </button>
           <button
             id="tab-assignments"
@@ -616,16 +615,16 @@ export default function App() {
             Submission
           </button>
           <button
-            id="tab-announcements"
+            id="tab-gradebook"
             type="button"
-            onClick={() => setTeacherView('announcements')}
+            onClick={() => setTeacherView('gradebook')}
             className={`px-5 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-              teacherView === 'announcements'
+              teacherView === 'gradebook'
                 ? 'bg-emerald-600 text-white shadow-xs'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
-            Announcements
+            Gradebook
           </button>
           <button
             id="tab-attendance"

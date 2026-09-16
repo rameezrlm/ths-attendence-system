@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, Mail, Phone, User } from 'lucide-react';
 import type { Student, UserSession } from '../types';
-import { getStudentById } from '../services/studentService';
+import { getStudentById, getStudentByIdLocal } from '../services/studentService';
 
 interface StudentProfileProps {
   studentId: string;
@@ -12,14 +12,12 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
   studentId,
   session,
 }) => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [student, setStudent] = useState<Student | null>(null);
+  const [student, setStudent] = useState<Student | null>(() => getStudentByIdLocal(studentId));
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      setIsLoading(true);
       try {
         const data = await getStudentById(studentId);
         if (cancelled) return;
@@ -27,25 +25,16 @@ export const StudentProfile: React.FC<StudentProfileProps> = ({
         if (!data) setError('Profile could not be found.');
       } catch (err) {
         console.error('Failed to load profile:', err);
-        if (!cancelled) setError('Failed to load your profile.');
-      } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled && !getStudentByIdLocal(studentId)) {
+          setError('Failed to load your profile.');
+        }
       }
     };
-    load();
+    void load();
     return () => {
       cancelled = true;
     };
   }, [studentId]);
-
-  if (isLoading) {
-    return (
-      <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-        <div className="w-7 h-7 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-xs font-medium text-slate-500">Loading your profile...</p>
-      </div>
-    );
-  }
 
   const name = student?.name || session.name;
   const email = student?.email || session.email;

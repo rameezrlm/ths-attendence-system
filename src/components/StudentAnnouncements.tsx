@@ -4,18 +4,26 @@ import type { Announcement } from '../types';
 import {
   fetchAnnouncements,
   formatAnnouncementTime,
+  readAnnouncementsLocal,
   subscribeAnnouncementUpdates,
 } from '../services/announcementService';
 
-export const StudentAnnouncements: React.FC = () => {
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+interface StudentAnnouncementsProps {
+  classId: string;
+}
+
+export const StudentAnnouncements: React.FC<StudentAnnouncementsProps> = ({ classId }) => {
+  const [announcements, setAnnouncements] = useState(() =>
+    readAnnouncementsLocal().filter((item) => item.classId === classId)
+  );
+  const [isLoading, setIsLoading] = useState(() => readAnnouncementsLocal().length === 0);
   const [error, setError] = useState<string | null>(null);
 
   const loadAnnouncements = async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-      setAnnouncements(await fetchAnnouncements());
+      const list = await fetchAnnouncements();
+      setAnnouncements(list.filter((item) => item.classId === classId));
       setError(null);
     } catch (err) {
       console.error('Failed to load announcements:', err);
@@ -26,11 +34,11 @@ export const StudentAnnouncements: React.FC = () => {
   };
 
   useEffect(() => {
-    void loadAnnouncements();
+    void loadAnnouncements(readAnnouncementsLocal().length > 0);
     return subscribeAnnouncementUpdates(() => {
       void loadAnnouncements(true);
     });
-  }, []);
+  }, [classId]);
 
   return (
     <div id="student-announcements" className="space-y-5">

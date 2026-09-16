@@ -1,7 +1,14 @@
-import { collection, getDocs, doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { deleteObject, getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
+import { collection, getDocs, doc, setDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import {
+  deleteObject,
+  getDownloadURL,
+  ref,
+  uploadBytes,
+  uploadBytesResumable,
+} from 'firebase/storage';
 import { db, isFirebaseConfigured, storage } from '../firebase/firebaseConfig';
 import type { AssignmentMaterial, AssignmentSubmission } from '../types';
+import { withFirestoreTimeout } from '../utils/firestoreTimeout';
 
 const ASSIGNMENTS_KEY = 'it_lab_assignments';
 const SUBMISSIONS_KEY = 'it_lab_assignment_submissions';
@@ -96,19 +103,6 @@ function openFileDb(): Promise<IDBDatabase> {
   });
 }
 
-async function saveLocalBlob(id: string, file: Blob, onProgress?: ProgressCb): Promise<void> {
-  onProgress?.(20);
-  const database = await openFileDb();
-  onProgress?.(55);
-  await new Promise<void>((resolve, reject) => {
-    const tx = database.transaction(LOCAL_FILE_STORE, 'readwrite');
-    tx.objectStore(LOCAL_FILE_STORE).put(file, id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-  onProgress?.(100);
-}
-
 async function readLocalBlob(id: string): Promise<Blob | null> {
   try {
     const database = await openFileDb();
@@ -121,6 +115,16 @@ async function readLocalBlob(id: string): Promise<Blob | null> {
   } catch {
     return null;
   }
+}
+
+async function writeLocalBlob(id: string, blob: Blob): Promise<void> {
+  const database = await openFileDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = database.transaction(LOCAL_FILE_STORE, 'readwrite');
+    tx.objectStore(LOCAL_FILE_STORE).put(blob, id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 async function deleteLocalBlob(id: string): Promise<void> {
@@ -140,20 +144,33 @@ async function deleteLocalBlob(id: string): Promise<void> {
 async function persistDoc(collectionName: string, id: string, data: object): Promise<void> {
   if (isFirebaseConfigured && db) {
     try {
-      await setDoc(doc(db, collectionName, id), toPayload(data), { merge: true });
+      await withFirestoreTimeout(
+        setDoc(doc(db, collectionName, id), toPayload(data), { merge: true }),
+        10000
+      );
     } catch (err) {
       console.error(`Error saving ${collectionName}/${id}:`, err);
     }
   }
 }
 
+export function readAssignmentsLocal(): AssignmentMaterial[] {
+  return sortByNewest(readList<AssignmentMaterial>(ASSIGNMENTS_KEY));
+}
+
+export function readAssignmentSubmissionsLocal(): AssignmentSubmission[] {
+  return sortByNewest(readList<AssignmentSubmission>(SUBMISSIONS_KEY));
+}
+
 async function fetchCollection<T extends { id: string; createdAt?: string; submittedAt?: string }>(
   collectionName: string,
   storageKey: string
 ): Promise<T[]> {
+  const local = sortByNewest(readList<T>(storageKey));
+
   if (isFirebaseConfigured && db) {
     try {
-      const snap = await getDocs(collection(db, collectionName));
+      const snap = await withFirestoreTimeout(getDocs(collection(db, collectionName)));
       if (!snap.empty) {
         const list: T[] = [];
         snap.forEach((d) => {
@@ -164,7 +181,6 @@ async function fetchCollection<T extends { id: string; createdAt?: string; submi
         return sorted;
       }
 
-      const local = sortByNewest(readList<T>(storageKey));
       if (local.length > 0) {
         for (const item of local) {
           try {
@@ -180,11 +196,313 @@ async function fetchCollection<T extends { id: string; createdAt?: string; submi
       return [];
     } catch (err) {
       console.warn(`Error fetching ${collectionName}, using local:`, err);
-      return sortByNewest(readList<T>(storageKey));
+      return local;
     }
   }
 
-  return sortByNewest(readList<T>(storageKey));
+  return local;
+}
+
+const CHUNK_CHARS = 90_000;
+const WRITE_CONCURRENCY = 20;
+/** Raw file size that fits in one Firestore doc (~1 MiB limit). */
+const FIRESTORE_BYTES_MAX = 900_000;
+/** Files at or below this size use a single Storage upload. */
+const STORAGE_SIMPLE_MAX = 8 * 1024 * 1024;
+
+/** After Storage fails once, skip it for the rest of the session (avoids repeated hangs). */
+let storageDisabled = false;
+
+function storageAttemptTimeoutMs(fileSize: number): number {
+  if (fileSize < 256 * 1024) return 5000;
+  if (fileSize < 2 * 1024 * 1024) return 8000;
+  return 15000;
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(new Error('Could not read the file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function base64ToBlob(value: string, type = 'application/octet-stream'): Blob {
+  return new Blob([base64ToBytes(value)], { type });
+}
+
+function isFirestoreFile(path?: string, url?: string): boolean {
+  return Boolean(path?.startsWith('firestore:') || url?.startsWith('firestore:'));
+}
+
+function firestoreFileId(path?: string, url?: string, fallback = ''): string {
+  const raw = path?.startsWith('firestore:') ? path : url?.startsWith('firestore:') ? url : '';
+  return raw ? raw.slice('firestore:'.length) : fallback;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      window.setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]);
+}
+
+async function uploadViaStorage(
+  storagePath: string,
+  file: File,
+  onProgress?: ProgressCb
+): Promise<{ fileUrl: string; storagePath: string }> {
+  if (!storage) {
+    throw new Error('Cloud storage is not available.');
+  }
+
+  const fileRef = ref(storage, storagePath);
+  onProgress?.(5);
+
+  const uploadPromise =
+    file.size <= STORAGE_SIMPLE_MAX
+      ? (async () => {
+          const snapshot = await uploadBytes(fileRef, file, {
+            contentType: file.type || 'application/octet-stream',
+          });
+          onProgress?.(92);
+          const fileUrl = await getDownloadURL(snapshot.ref);
+          return { fileUrl, storagePath };
+        })()
+      : new Promise<{ fileUrl: string; storagePath: string }>((resolve, reject) => {
+          const task = uploadBytesResumable(fileRef, file, {
+            contentType: file.type || 'application/octet-stream',
+          });
+          task.on(
+            'state_changed',
+            (snapshot) => {
+              const pct = snapshot.totalBytes
+                ? Math.min(92, Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 92))
+                : 5;
+              onProgress?.(pct);
+            },
+            reject,
+            () => {
+              void getDownloadURL(task.snapshot.ref)
+                .then((fileUrl) => resolve({ fileUrl, storagePath }))
+                .catch(reject);
+            }
+          );
+        });
+
+  onProgress?.(100);
+  return uploadPromise;
+}
+
+function firestoreDataToBytes(data: unknown): Uint8Array {
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (
+    typeof data === 'object' &&
+    data !== null &&
+    'toUint8Array' in data &&
+    typeof (data as { toUint8Array: () => Uint8Array }).toUint8Array === 'function'
+  ) {
+    return (data as { toUint8Array: () => Uint8Array }).toUint8Array();
+  }
+  throw new Error('Unsupported file data format.');
+}
+
+/** Fast single-write upload for small/medium files (no base64, no Storage). */
+async function uploadViaFirestoreBytes(
+  fileId: string,
+  file: File,
+  onProgress?: ProgressCb
+): Promise<void> {
+  if (!db) {
+    throw new Error('Database is not available.');
+  }
+
+  onProgress?.(12);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  onProgress?.(35);
+
+  await withFirestoreTimeout(
+    setDoc(doc(db, 'assignmentFiles', fileId), {
+      fileName: file.name,
+      fileType: file.type || '',
+      fileSize: file.size,
+      chunkCount: 0,
+      encoding: 'bytes-single',
+      data: bytes,
+    }),
+    12000
+  );
+  onProgress?.(100);
+}
+
+async function runPool(
+  count: number,
+  limit: number,
+  worker: (index: number) => Promise<void>,
+  onProgress?: (done: number) => void
+): Promise<void> {
+  let next = 0;
+  let done = 0;
+
+  const run = async () => {
+    while (next < count) {
+      const index = next;
+      next += 1;
+      await worker(index);
+      done += 1;
+      onProgress?.(done);
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(limit, count) }, () => run()));
+}
+
+async function uploadViaFirestore(
+  fileId: string,
+  file: File,
+  onProgress?: ProgressCb
+): Promise<void> {
+  if (!db) {
+    throw new Error('Database is not available.');
+  }
+
+  onProgress?.(8);
+  const base64 = await fileToBase64(file);
+  onProgress?.(18);
+
+  if (base64.length < 850_000) {
+    await withFirestoreTimeout(
+      setDoc(doc(db, 'assignmentFiles', fileId), {
+        fileName: file.name,
+        fileType: file.type || '',
+        fileSize: file.size,
+        chunkCount: 0,
+        encoding: 'b64-single',
+        data: base64,
+      }),
+      12000
+    );
+    onProgress?.(100);
+    return;
+  }
+
+  const chunks: string[] = [];
+  for (let i = 0; i < base64.length; i += CHUNK_CHARS) {
+    chunks.push(base64.slice(i, i + CHUNK_CHARS));
+  }
+  const total = chunks.length;
+
+  await runPool(
+    total,
+    WRITE_CONCURRENCY,
+    async (index) => {
+      await withFirestoreTimeout(
+        setDoc(doc(db, 'assignmentFiles', fileId, 'chunks', String(index)), {
+          data: chunks[index],
+          index,
+        }),
+        12000
+      );
+    },
+    (done) => {
+      onProgress?.(18 + Math.round((done / total) * 78));
+    }
+  );
+
+  await withFirestoreTimeout(
+    setDoc(doc(db, 'assignmentFiles', fileId), {
+      fileName: file.name,
+      fileType: file.type || '',
+      fileSize: file.size,
+      chunkCount: total,
+      encoding: 'b64-split',
+    }),
+    12000
+  );
+  onProgress?.(100);
+}
+
+async function downloadFirestoreFile(fileId: string, fileName: string): Promise<void> {
+  if (!db) {
+    throw new Error('Database is not available.');
+  }
+
+  const meta = await withFirestoreTimeout(getDoc(doc(db, 'assignmentFiles', fileId)), 10000);
+  const encoding = String(meta.data()?.encoding || '');
+  const single = String(meta.data()?.data || '');
+  const fileType = String(meta.data()?.fileType || '') || 'application/octet-stream';
+
+  let blob: Blob;
+  if (encoding === 'bytes-single') {
+    blob = new Blob([firestoreDataToBytes(meta.data()?.data)], { type: fileType });
+  } else if (encoding === 'b64-single' && single) {
+    blob = base64ToBlob(single, fileType);
+  } else {
+    const snap = await getDocs(collection(db, 'assignmentFiles', fileId, 'chunks'));
+    if (snap.empty) {
+      throw new Error('This file could not be found.');
+    }
+    const ordered = snap.docs.sort((a, b) => Number(a.id) - Number(b.id));
+    if (encoding === 'b64-split') {
+      blob = base64ToBlob(ordered.map((item) => String(item.data().data || '')).join(''));
+    } else {
+      const parts = ordered.map((item) => base64ToBytes(String(item.data().data || '')));
+      const size = parts.reduce((sum, part) => sum + part.length, 0);
+      const merged = new Uint8Array(size);
+      let offset = 0;
+      for (const part of parts) {
+        merged.set(part, offset);
+        offset += part.length;
+      }
+      blob = new Blob([merged]);
+    }
+  }
+
+  const objectUrl = URL.createObjectURL(blob);
+  startBrowserDownload(objectUrl, fileName);
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 2000);
+}
+
+async function deleteFirestoreFile(fileId: string): Promise<void> {
+  if (!db) return;
+  try {
+    const snap = await getDocs(collection(db, 'assignmentFiles', fileId, 'chunks'));
+    await Promise.all(snap.docs.map((item) => deleteDoc(item.ref)));
+    await deleteDoc(doc(db, 'assignmentFiles', fileId));
+  } catch (err) {
+    console.warn('Failed to delete Firestore file chunks:', err);
+  }
+}
+
+function firestoreUploadResult(localId: string): {
+  fileUrl: string;
+  storagePath: string;
+  localOnly: boolean;
+  fileBackend: 'storage' | 'firestore';
+} {
+  return {
+    fileUrl: `firestore:${localId}`,
+    storagePath: `firestore:${localId}`,
+    localOnly: false,
+    fileBackend: 'firestore',
+  };
 }
 
 async function uploadFile(
@@ -192,42 +510,50 @@ async function uploadFile(
   localId: string,
   file: File,
   onProgress?: ProgressCb
-): Promise<{ fileUrl: string; storagePath: string; localOnly: boolean }> {
+): Promise<{ fileUrl: string; storagePath: string; localOnly: boolean; fileBackend: 'storage' | 'firestore' }> {
   onProgress?.(1);
 
-  if (storage) {
+  void writeLocalBlob(localId, file).catch((err) => {
+    console.warn('Failed to cache uploaded file locally:', err);
+  });
+
+  // Fast path: small files go straight to Firestore (binary, one write). Avoids Storage hangs.
+  if (isFirebaseConfigured && db && file.size <= FIRESTORE_BYTES_MAX) {
+    await uploadViaFirestoreBytes(localId, file, onProgress);
+    return firestoreUploadResult(localId);
+  }
+
+  // Larger files: try Storage with a short timeout, then chunked Firestore fallback.
+  if (storage && !storageDisabled) {
     try {
-      const fileRef = ref(storage, storagePath);
-      const task = uploadBytesResumable(fileRef, file);
-      const fileUrl = await new Promise<string>((resolve, reject) => {
-        task.on(
-          'state_changed',
-          (snapshot) => {
-            const percent = Math.max(
-              1,
-              Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)
-            );
-            onProgress?.(percent);
-          },
-          reject,
-          async () => {
-            try {
-              onProgress?.(100);
-              resolve(await getDownloadURL(task.snapshot.ref));
-            } catch (err) {
-              reject(err);
-            }
-          }
-        );
-      });
-      return { fileUrl, storagePath, localOnly: false };
+      const uploaded = await withTimeout(
+        uploadViaStorage(storagePath, file, onProgress),
+        storageAttemptTimeoutMs(file.size),
+        'Storage upload timed out'
+      );
+      return {
+        ...uploaded,
+        localOnly: false,
+        fileBackend: 'storage',
+      };
     } catch (err) {
-      console.warn('Firebase Storage upload failed, saving file locally:', err);
+      storageDisabled = true;
+      console.warn('Storage upload unavailable, using Firestore fallback:', err);
     }
   }
 
-  await saveLocalBlob(localId, file, onProgress);
-  return { fileUrl: '', storagePath: '', localOnly: true };
+  if (isFirebaseConfigured && db) {
+    await uploadViaFirestore(localId, file, onProgress);
+    return firestoreUploadResult(localId);
+  }
+
+  onProgress?.(100);
+  return {
+    fileUrl: `local:${localId}`,
+    storagePath: `local:${localId}`,
+    localOnly: true,
+    fileBackend: 'storage',
+  };
 }
 
 export function formatFileSize(bytes: number): string {
@@ -280,6 +606,7 @@ export async function createAssignment(input: {
   file: File;
   uploadedBy: string;
   closesAt: string;
+  classId?: string;
   onProgress?: ProgressCb;
 }): Promise<AssignmentMaterial> {
   const title = input.title.trim();
@@ -313,6 +640,7 @@ export async function createAssignment(input: {
   );
   const assignment: AssignmentMaterial = {
     id,
+    classId: input.classId,
     title,
     description,
     fileName: input.file.name,
@@ -324,9 +652,10 @@ export async function createAssignment(input: {
     createdAt: new Date().toISOString(),
     closesAt: closesAt.toISOString(),
     localOnly: uploaded.localOnly,
+    fileBackend: uploaded.fileBackend,
   };
 
-  const list = await fetchAssignments();
+  const list = readList<AssignmentMaterial>(ASSIGNMENTS_KEY).filter((item) => item.id !== id);
   writeList(ASSIGNMENTS_KEY, [assignment, ...list]);
   await persistDoc('assignments', assignment.id, assignment);
   return assignment;
@@ -350,14 +679,8 @@ export async function submitAssignmentWork(input: {
   }
 
   const id = `${input.assignment.id}_${input.studentId}`;
-  const existing = (await fetchAssignmentSubmissions()).find((item) => item.id === id);
-  if (existing?.storagePath && storage) {
-    try {
-      await deleteObject(ref(storage, existing.storagePath));
-    } catch (err) {
-      console.warn('Failed to replace previous submission file:', err);
-    }
-  }
+  const cached = readList<AssignmentSubmission>(SUBMISSIONS_KEY);
+  const existing = cached.find((item) => item.id === id);
 
   const uploaded = await uploadFile(
     `assignments/${input.assignment.id}/submissions/${input.studentId}/${safeFileName(input.file.name)}`,
@@ -379,11 +702,25 @@ export async function submitAssignmentWork(input: {
     storagePath: uploaded.storagePath,
     submittedAt: new Date().toISOString(),
     localOnly: uploaded.localOnly,
+    fileBackend: uploaded.fileBackend,
   };
 
-  const list = (await fetchAssignmentSubmissions()).filter((item) => item.id !== id);
-  writeList(SUBMISSIONS_KEY, [submission, ...list]);
+  writeList(
+    SUBMISSIONS_KEY,
+    [submission, ...cached.filter((item) => item.id !== id)]
+  );
   await persistDoc('assignmentSubmissions', submission.id, submission);
+
+  if (existing?.storagePath && existing.storagePath !== uploaded.storagePath) {
+    if (isFirestoreFile(existing.storagePath, existing.fileUrl)) {
+      void deleteFirestoreFile(firestoreFileId(existing.storagePath, existing.fileUrl, `sub_${id}`));
+    } else if (storage) {
+      void deleteObject(ref(storage, existing.storagePath)).catch((err) => {
+        console.warn('Failed to remove previous submission file:', err);
+      });
+    }
+  }
+
   return submission;
 }
 
@@ -402,18 +739,26 @@ export async function deleteAssignment(id: string): Promise<void> {
     submissions.filter((item) => item.assignmentId !== id)
   );
 
-  if (existing?.storagePath && storage) {
-    try {
-      await deleteObject(ref(storage, existing.storagePath));
-    } catch (err) {
-      console.warn('Failed to delete assignment file from Storage:', err);
+  if (existing) {
+    if (isFirestoreFile(existing.storagePath, existing.fileUrl)) {
+      await deleteFirestoreFile(firestoreFileId(existing.storagePath, existing.fileUrl, id));
+    } else if (existing.storagePath && storage) {
+      try {
+        await deleteObject(ref(storage, existing.storagePath));
+      } catch (err) {
+        console.warn('Failed to delete assignment file from Storage:', err);
+      }
     }
   }
 
   await deleteLocalBlob(id);
 
   for (const submission of related) {
-    if (submission.storagePath && storage) {
+    if (isFirestoreFile(submission.storagePath, submission.fileUrl)) {
+      await deleteFirestoreFile(
+        firestoreFileId(submission.storagePath, submission.fileUrl, `sub_${submission.id}`)
+      );
+    } else if (submission.storagePath && storage) {
       try {
         await deleteObject(ref(storage, submission.storagePath));
       } catch (err) {
@@ -439,43 +784,42 @@ export async function deleteAssignment(id: string): Promise<void> {
   }
 }
 
+function startBrowserDownload(url: string, fileName: string): void {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 async function downloadStoredFile(options: {
   id: string;
   fileName: string;
   fileUrl: string;
   localId: string;
+  storagePath?: string;
 }): Promise<void> {
-  let blob: Blob | null = null;
-
-  if (options.fileUrl) {
-    try {
-      const response = await fetch(options.fileUrl);
-      if (response.ok) {
-        blob = await response.blob();
-      }
-    } catch (err) {
-      console.warn('Could not fetch file as a blob, opening instead:', err);
-    }
-  }
-
-  if (!blob) {
-    blob = await readLocalBlob(options.localId);
-  }
-
-  if (blob) {
-    const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = objectUrl;
-    link.download = options.fileName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+  if (isFirestoreFile(options.storagePath, options.fileUrl)) {
+    await downloadFirestoreFile(
+      firestoreFileId(options.storagePath, options.fileUrl, options.localId),
+      options.fileName
+    );
     return;
   }
 
-  if (options.fileUrl) {
-    window.open(options.fileUrl, '_blank', 'noopener,noreferrer');
+  if (options.fileUrl.startsWith('http')) {
+    startBrowserDownload(options.fileUrl, options.fileName);
+    return;
+  }
+
+  const blob = await readLocalBlob(options.localId);
+  if (blob) {
+    const objectUrl = URL.createObjectURL(blob);
+    startBrowserDownload(objectUrl, options.fileName);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
     return;
   }
 
@@ -488,6 +832,7 @@ export async function downloadAssignment(assignment: AssignmentMaterial): Promis
     fileName: assignment.fileName,
     fileUrl: assignment.fileUrl,
     localId: assignment.id,
+    storagePath: assignment.storagePath,
   });
 }
 
@@ -497,5 +842,6 @@ export async function downloadSubmission(submission: AssignmentSubmission): Prom
     fileName: submission.fileName,
     fileUrl: submission.fileUrl,
     localId: `sub_${submission.id}`,
+    storagePath: submission.storagePath,
   });
 }

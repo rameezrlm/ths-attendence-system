@@ -8,6 +8,7 @@ import { Login } from './components/Login';
 import { TeacherGradebook } from './components/TeacherGradebook';
 import { StudentGradebook } from './components/StudentGradebook';
 import { StudentProfile } from './components/StudentProfile';
+import { TeacherProfile } from './components/TeacherProfile';
 import { StudentTickets } from './components/StudentTickets';
 import { StudentNotifications } from './components/StudentNotifications';
 import { TeacherTickets } from './components/TeacherTickets';
@@ -15,12 +16,20 @@ import { TeacherAssignments } from './components/TeacherAssignments';
 import { StudentAssignments } from './components/StudentAssignments';
 import { TeacherAnnouncements } from './components/TeacherAnnouncements';
 import { StudentAnnouncements } from './components/StudentAnnouncements';
+import { StudentAttendance } from './components/StudentAttendance';
+import { CoursePicker } from './components/CoursePicker';
 import { fetchStudents } from './services/studentService';
+import { fetchTeachers } from './services/teacherService';
+import {
+  fetchClassesForStudent,
+  fetchClassesForTeacher,
+  filterStudentsByClass,
+} from './services/classService';
 import {
   getAttendanceByDate,
   saveAttendanceForDate,
 } from './services/attendanceService';
-import { getCurrentSession, logoutUser } from './services/teacherService';
+import { getCurrentSession, logoutUser, saveSession } from './services/teacherService';
 import {
   fetchTickets,
   pendingTicketCount,
@@ -34,8 +43,9 @@ import type {
   UserSession,
   AttendanceDayEntry,
   AttendanceFilter,
+  LabClass,
 } from './types';
-import { CheckCircle2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
 
 function formatDateToISO(d: Date): string {
   const y = d.getFullYear();
@@ -75,13 +85,23 @@ export default function App() {
 
   // Teacher workspace: Gradebook or existing Attendance section
   const [teacherView, setTeacherView] = useState<
-    'gradebook' | 'assignments' | 'attendance' | 'tickets' | 'announcements'
+    'gradebook' | 'assignments' | 'attendance' | 'tickets' | 'announcements' | 'profile'
   >('gradebook');
   const [studentView, setStudentView] = useState<
-    'gradebook' | 'assignments' | 'tickets' | 'notifications' | 'announcements' | 'profile'
-  >('gradebook');
+    | 'gradebook'
+    | 'assignments'
+    | 'attendance'
+    | 'tickets'
+    | 'notifications'
+    | 'announcements'
+    | 'profile'
+  >('announcements');
   const [pendingTickets, setPendingTickets] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [myClasses, setMyClasses] = useState<LabClass[]>([]);
+  const [classesLoading, setClassesLoading] = useState(false);
+  const [teacherId, setTeacherId] = useState<string | undefined>(session?.teacherId);
 
   // Modals state for Teacher
   const [isMonthlyReportOpen, setIsMonthlyReportOpen] = useState(false);
@@ -108,10 +128,10 @@ export default function App() {
   };
 
   // Load attendance for current day (today)
-  const loadAttendanceForToday = async () => {
+  const loadAttendanceForToday = async (classId: string) => {
     setIsLoading(true);
     try {
-      const attData = await getAttendanceByDate(todayISO);
+      const attData = await getAttendanceByDate(todayISO, classId);
       setAttendanceMap(attData);
       setHasExistingRecords(Object.keys(attData).length > 0);
     } catch (err) {
@@ -123,11 +143,51 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (session && session.role === 'teacher') {
-      loadStudentsList();
-      loadAttendanceForToday();
+    if (!session || session.role !== 'teacher') return;
+    if (session.teacherId) {
+      setTeacherId(session.teacherId);
+      return;
     }
+    void fetchTeachers().then((list) => {
+      const matched = list.find((teacher) => teacher.email === session.email);
+      if (matched) setTeacherId(matched.id);
+    });
   }, [session]);
+
+  useEffect(() => {
+    if (!session) return;
+    setSelectedClassId(null);
+    setMyClasses([]);
+    if (session.role === 'teacher' && teacherId) {
+      setClassesLoading(true);
+      void fetchClassesForTeacher(teacherId)
+        .then(setMyClasses)
+        .finally(() => setClassesLoading(false));
+    }
+    if (session.role === 'student' && session.studentId) {
+      setClassesLoading(true);
+      void fetchClassesForStudent(session.studentId)
+        .then(setMyClasses)
+        .finally(() => setClassesLoading(false));
+    }
+  }, [session, teacherId]);
+
+  useEffect(() => {
+    if (session?.role === 'teacher' && selectedClassId) {
+      void loadStudentsList();
+      void loadAttendanceForToday(selectedClassId);
+    }
+  }, [session, selectedClassId]);
+
+  const selectedClass = useMemo(
+    () => myClasses.find((item) => item.id === selectedClassId) || null,
+    [myClasses, selectedClassId]
+  );
+
+  const classStudents = useMemo(() => {
+    if (!selectedClass) return [];
+    return filterStudentsByClass(students, selectedClass);
+  }, [students, selectedClass]);
 
   const refreshTicketStats = async () => {
     if (!session) return;
@@ -161,7 +221,7 @@ export default function App() {
     let late = 0;
     let earlyLeft = 0;
 
-    students.forEach((s) => {
+    classStudents.forEach((s) => {
       const st = attendanceMap[s.id]?.status;
       if (st === 'present') present++;
       else if (st === 'absent') absent++;
@@ -169,12 +229,12 @@ export default function App() {
       else if (st === 'early_left') earlyLeft++;
     });
 
-    const totalStudents = students.length;
+    const totalStudents = classStudents.length;
     const marked = present + absent + late + earlyLeft;
     const unmarked = Math.max(0, totalStudents - marked);
 
     return { totalStudents, present, absent, late, earlyLeft, unmarked };
-  }, [students, attendanceMap]);
+  }, [classStudents, attendanceMap]);
 
   // Teacher Attendance Actions
   const handleStatusChange = (studentId: string, status: AttendanceStatus) => {
@@ -196,7 +256,7 @@ export default function App() {
 
   const handleMarkAllPresent = () => {
     const updated: Record<string, AttendanceDayEntry> = {};
-    students.forEach((s) => {
+    classStudents.forEach((s) => {
       updated[s.id] = { status: 'present' };
     });
     setAttendanceMap(updated);
@@ -208,7 +268,9 @@ export default function App() {
   };
 
   const handleSaveAttendance = async () => {
-    const unmarkedStudents = students.filter((s) => !attendanceMap[s.id]);
+    if (!selectedClassId) return;
+
+    const unmarkedStudents = classStudents.filter((s) => !attendanceMap[s.id]);
     if (unmarkedStudents.length > 0) {
       showToast('error', 'Please mark attendance for all students before saving.');
       return;
@@ -216,13 +278,13 @@ export default function App() {
 
     try {
       setIsSaving(true);
-      const recordsToSave = students.map((student) => ({
+      const recordsToSave = classStudents.map((student) => ({
         student,
         status: attendanceMap[student.id].status,
         joinTime: attendanceMap[student.id].joinTime,
       }));
 
-      await saveAttendanceForDate(todayISO, recordsToSave);
+      await saveAttendanceForDate(todayISO, recordsToSave, selectedClassId);
       setHasExistingRecords(true);
       showToast('success', "Today's attendance saved successfully.");
     } catch (err) {
@@ -236,6 +298,26 @@ export default function App() {
   const handleLogout = () => {
     logoutUser();
     setSession(null);
+    setSelectedClassId(null);
+    setMyClasses([]);
+  };
+
+  const handleOpenNotifications = () => {
+    if (!selectedClassId) {
+      showToast('error', 'Select a course first to view notifications.');
+      return;
+    }
+    setStudentView('notifications');
+  };
+
+  const handleGoHome = () => {
+    setSelectedClassId(null);
+    if (session?.role === 'student') {
+      setStudentView('announcements');
+    }
+    if (session?.role === 'teacher') {
+      setTeacherView('gradebook');
+    }
   };
 
   // 1. Not Authenticated: Show Login page
@@ -264,37 +346,49 @@ export default function App() {
         <Header
           session={session}
           onLogout={handleLogout}
+          onGoHome={handleGoHome}
           todayDisplay={todayDisplay}
+          onOpenProfile={() => setStudentView('profile')}
+          onOpenNotifications={handleOpenNotifications}
+          isProfileActive={studentView === 'profile'}
+          isNotificationsActive={studentView === 'notifications'}
+          unreadNotifications={unreadNotifications}
         />
         <main className="flex-1 max-w-3xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+          {!selectedClassId && studentView !== 'profile' ? (
+            <CoursePicker
+              classes={myClasses}
+              roleLabel="student"
+              isLoading={classesLoading}
+              onSelect={(classId) => {
+                setSelectedClassId(classId);
+                setStudentView('announcements');
+              }}
+            />
+          ) : (
+            <>
+          {selectedClassId && studentView !== 'profile' && (
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedClassId(null);
+                  setStudentView('announcements');
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                All Courses
+              </button>
+              <span className="text-xs font-bold text-slate-800">{selectedClass?.name}</span>
+            </div>
+          )}
+
+          {selectedClassId && studentView !== 'profile' && (
           <div
             id="student-workspace-tabs"
             className="inline-flex flex-wrap p-1 bg-white border border-slate-200 rounded-xl shadow-xs"
           >
-            <button
-              id="tab-student-gradebook"
-              type="button"
-              onClick={() => setStudentView('gradebook')}
-              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                studentView === 'gradebook'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              Gradebook
-            </button>
-            <button
-              id="tab-student-assignments"
-              type="button"
-              onClick={() => setStudentView('assignments')}
-              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                studentView === 'assignments'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              Assignments
-            </button>
             <button
               id="tab-student-announcements"
               type="button"
@@ -308,6 +402,42 @@ export default function App() {
               Announcements
             </button>
             <button
+              id="tab-student-assignments"
+              type="button"
+              onClick={() => setStudentView('assignments')}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                studentView === 'assignments'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              Submission
+            </button>
+            <button
+              id="tab-student-gradebook"
+              type="button"
+              onClick={() => setStudentView('gradebook')}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                studentView === 'gradebook'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              Gradebook
+            </button>
+            <button
+              id="tab-student-attendance"
+              type="button"
+              onClick={() => setStudentView('attendance')}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                studentView === 'attendance'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+              }`}
+            >
+              Attendance
+            </button>
+            <button
               id="tab-student-tickets"
               type="button"
               onClick={() => setStudentView('tickets')}
@@ -319,65 +449,62 @@ export default function App() {
             >
               Tickets
             </button>
-            <button
-              id="tab-student-notifications"
-              type="button"
-              onClick={() => setStudentView('notifications')}
-              className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                studentView === 'notifications'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              Notifications
-              {unreadNotifications > 0 && (
-                <span className="min-w-[1.15rem] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] leading-4 text-center">
-                  {unreadNotifications}
-                </span>
-              )}
-            </button>
-            <button
-              id="tab-student-profile"
-              type="button"
-              onClick={() => setStudentView('profile')}
-              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                studentView === 'profile'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-              }`}
-            >
-              Profile
-            </button>
           </div>
+          )}
 
           {!session.studentId ? (
             <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-xs text-slate-500">
               Your student account could not be loaded. Please sign out and sign in again.
             </div>
+          ) : selectedClassId ? (
+            <>
+              <div className={studentView === 'gradebook' ? '' : 'hidden'}>
+                <StudentGradebook
+                  classId={selectedClassId}
+                  classStudentIds={selectedClass?.studentIds || []}
+                  studentId={session.studentId}
+                  studentName={session.name}
+                />
+              </div>
+              <div className={studentView === 'assignments' ? '' : 'hidden'}>
+                <StudentAssignments
+                  classId={selectedClassId}
+                  studentId={session.studentId}
+                  studentName={session.name}
+                  studentEmail={session.email}
+                />
+              </div>
+              <div className={studentView === 'attendance' ? '' : 'hidden'}>
+                <StudentAttendance
+                  classId={selectedClassId}
+                  studentId={session.studentId}
+                  studentName={session.name}
+                />
+              </div>
+              <div className={studentView === 'announcements' ? '' : 'hidden'}>
+                <StudentAnnouncements classId={selectedClassId} />
+              </div>
+              <div className={studentView === 'tickets' ? '' : 'hidden'}>
+                <StudentTickets
+                  classId={selectedClassId}
+                  studentId={session.studentId}
+                  studentName={session.name}
+                  studentEmail={session.email}
+                  onTicketsChanged={refreshTicketStats}
+                />
+              </div>
+              <div className={studentView === 'notifications' ? '' : 'hidden'}>
+                <StudentNotifications
+                  classId={selectedClassId}
+                  studentId={session.studentId}
+                  onNotificationsSeen={() => setUnreadNotifications(0)}
+                />
+              </div>
+            </>
           ) : studentView === 'profile' ? (
             <StudentProfile studentId={session.studentId} session={session} />
-          ) : studentView === 'assignments' ? (
-            <StudentAssignments
-              studentId={session.studentId}
-              studentName={session.name}
-              studentEmail={session.email}
-            />
-          ) : studentView === 'announcements' ? (
-            <StudentAnnouncements />
-          ) : studentView === 'tickets' ? (
-            <StudentTickets
-              studentId={session.studentId}
-              studentName={session.name}
-              studentEmail={session.email}
-              onTicketsChanged={refreshTicketStats}
-            />
-          ) : studentView === 'notifications' ? (
-            <StudentNotifications
-              studentId={session.studentId}
-              onNotificationsSeen={() => setUnreadNotifications(0)}
-            />
-          ) : (
-            <StudentGradebook studentId={session.studentId} studentName={session.name} />
+          ) : null}
+            </>
           )}
         </main>
         <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-400">
@@ -413,11 +540,53 @@ export default function App() {
       <Header
         session={session}
         onLogout={handleLogout}
+        onGoHome={handleGoHome}
         todayDisplay={todayDisplay}
+        onOpenProfile={() =>
+          setTeacherView((prev) => (prev === 'profile' ? 'gradebook' : 'profile'))
+        }
+        isProfileActive={teacherView === 'profile'}
       />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {teacherView === 'profile' && teacherId ? (
+          <TeacherProfile
+            teacherId={teacherId}
+            session={session}
+            showToast={showToast}
+            onSessionUpdated={(updated) => {
+              saveSession(updated);
+              setSession(updated);
+            }}
+          />
+        ) : !selectedClassId ? (
+          <CoursePicker
+            classes={myClasses}
+            roleLabel="teacher"
+            isLoading={classesLoading}
+            onSelect={(classId) => {
+              setSelectedClassId(classId);
+              setTeacherView('gradebook');
+            }}
+          />
+        ) : (
+          <>
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedClassId(null);
+              setTeacherView('gradebook');
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            All Courses
+          </button>
+          <span className="text-xs font-bold text-slate-800">{selectedClass?.name}</span>
+        </div>
+
         <div
           id="teacher-workspace-tabs"
           className="inline-flex flex-wrap p-1 bg-white border border-slate-200 rounded-xl shadow-xs"
@@ -444,7 +613,7 @@ export default function App() {
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
-            Assignments
+            Submission
           </button>
           <button
             id="tab-announcements"
@@ -491,25 +660,39 @@ export default function App() {
 
         {teacherView === 'gradebook' && (
           <section id="section-gradebook" aria-label="Teacher Gradebook">
-            <TeacherGradebook students={students} showToast={showToast} />
+            <TeacherGradebook
+              classId={selectedClassId}
+              students={classStudents}
+              showToast={showToast}
+            />
           </section>
         )}
 
         {teacherView === 'assignments' && (
-          <section id="section-assignments" aria-label="Teacher Assignments">
-            <TeacherAssignments session={session} showToast={showToast} />
+          <section id="section-assignments" aria-label="Teacher Submissions">
+            <TeacherAssignments
+              classId={selectedClassId}
+              session={session}
+              showToast={showToast}
+            />
           </section>
         )}
 
         {teacherView === 'announcements' && (
           <section id="section-announcements" aria-label="Teacher Announcements">
-            <TeacherAnnouncements session={session} showToast={showToast} />
+            <TeacherAnnouncements
+              classId={selectedClassId}
+              session={session}
+              showToast={showToast}
+            />
           </section>
         )}
 
         {teacherView === 'tickets' && (
           <section id="section-tickets" aria-label="Teacher Tickets">
             <TeacherTickets
+              classId={selectedClassId}
+              classStudentIds={selectedClass?.studentIds}
               session={session}
               showToast={showToast}
               onStatsChange={setPendingTickets}
@@ -529,7 +712,7 @@ export default function App() {
 
             <section id="section-attendance-table" aria-label="Daily Attendance Table">
               <AttendanceTable
-                students={students}
+                students={classStudents}
                 attendanceMap={attendanceMap}
                 todayDisplay={todayDisplay}
                 isLoading={isLoading}
@@ -546,6 +729,8 @@ export default function App() {
             </section>
           </>
         )}
+          </>
+        )}
       </main>
 
       {/* Footer */}
@@ -557,7 +742,7 @@ export default function App() {
       <MonthlyReportModal
         isOpen={isMonthlyReportOpen}
         onClose={() => setIsMonthlyReportOpen(false)}
-        students={students}
+        students={classStudents}
         currentYear={currentDateObj.getFullYear()}
         currentMonth={currentDateObj.getMonth() + 1}
       />

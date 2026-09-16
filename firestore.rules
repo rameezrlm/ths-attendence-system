@@ -52,7 +52,18 @@ service cloud.firestore {
       allow read, write: if isAllowed();
     }
 
+    match /assignmentFiles/{fileId} {
+      allow read, write: if isAllowed();
+      match /chunks/{chunkId} {
+        allow read, write: if isAllowed();
+      }
+    }
+
     match /announcements/{announcementId} {
+      allow read, write: if isAllowed();
+    }
+
+    match /labClasses/{classId} {
       allow read, write: if isAllowed();
     }
   }

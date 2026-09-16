@@ -5,11 +5,13 @@ import {
   createTicket,
   fetchStudentTickets,
   formatTicketTime,
+  readTicketsLocal,
   subscribeTicketUpdates,
 } from '../services/ticketService';
 import { TicketProgress, TicketStatusBadge } from './TicketStatusBadge';
 
 interface StudentTicketsProps {
+  classId: string;
   studentId: string;
   studentName: string;
   studentEmail: string;
@@ -17,13 +19,20 @@ interface StudentTicketsProps {
 }
 
 export const StudentTickets: React.FC<StudentTicketsProps> = ({
+  classId,
   studentId,
   studentName,
   studentEmail,
   onTicketsChanged,
 }) => {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [tickets, setTickets] = useState(() =>
+    readTicketsLocal().filter(
+      (ticket) => ticket.studentId === studentId && ticket.classId === classId
+    )
+  );
+  const [isLoading, setIsLoading] = useState(
+    () => readTicketsLocal().filter((ticket) => ticket.studentId === studentId).length === 0
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
@@ -33,7 +42,9 @@ export const StudentTickets: React.FC<StudentTicketsProps> = ({
   const loadTickets = async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-      const list = await fetchStudentTickets(studentId);
+      const list = (await fetchStudentTickets(studentId)).filter(
+        (ticket) => ticket.classId === classId
+      );
       setTickets(list);
     } catch (err) {
       console.error('Failed to load tickets:', err);
@@ -44,11 +55,12 @@ export const StudentTickets: React.FC<StudentTicketsProps> = ({
   };
 
   useEffect(() => {
-    void loadTickets();
+    const hasCache = readTicketsLocal().some((ticket) => ticket.studentId === studentId);
+    void loadTickets(hasCache);
     return subscribeTicketUpdates(() => {
       void loadTickets(true);
     });
-  }, [studentId]);
+  }, [studentId, classId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,6 +75,7 @@ export const StudentTickets: React.FC<StudentTicketsProps> = ({
         studentEmail,
         subject,
         message,
+        classId,
       });
       setTickets((prev) => [created, ...prev]);
       setSubject('');

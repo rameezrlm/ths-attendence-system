@@ -8,6 +8,7 @@ import {
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase/firebaseConfig';
 import type { AttendanceDayEntry, AttendanceRecord, AttendanceStatus, Student } from '../types';
+import { withFirestoreTimeout } from '../utils/firestoreTimeout';
 
 const ATTENDANCE_STORAGE_KEY = 'it_lab_attendance';
 
@@ -39,18 +40,28 @@ function toDayEntry(rec: AttendanceRecord): AttendanceDayEntry {
  * Fetch attendance map for a specific date (format: YYYY-MM-DD).
  * Returns: { [studentId]: { status, joinTime? } }
  */
+function matchesClassFilter(rec: AttendanceRecord, classId?: string): boolean {
+  if (!classId) return true;
+  return rec.classId === classId;
+}
+
+function buildAttendanceId(classId: string | undefined, studentId: string, dateStr: string): string {
+  return classId ? `${classId}_${studentId}_${dateStr}` : `${studentId}_${dateStr}`;
+}
+
 export async function getAttendanceByDate(
-  dateStr: string
+  dateStr: string,
+  classId?: string
 ): Promise<Record<string, AttendanceDayEntry>> {
   const result: Record<string, AttendanceDayEntry> = {};
 
   if (isFirebaseConfigured && db) {
     try {
       const q = query(collection(db, 'attendance'), where('date', '==', dateStr));
-      const snap = await getDocs(q);
+      const snap = await withFirestoreTimeout(getDocs(q));
       snap.forEach((d) => {
         const data = d.data() as AttendanceRecord;
-        if (data.studentId && data.status) {
+        if (data.studentId && data.status && matchesClassFilter(data, classId)) {
           result[data.studentId] = toDayEntry(data);
         }
       });
@@ -68,7 +79,12 @@ export async function getAttendanceByDate(
 
   const localMap = getLocalAttendance();
   Object.values(localMap).forEach((rec) => {
-    if (rec.date === dateStr && rec.studentId && rec.status) {
+    if (
+      rec.date === dateStr &&
+      rec.studentId &&
+      rec.status &&
+      matchesClassFilter(rec, classId)
+    ) {
       result[rec.studentId] = toDayEntry(rec);
     }
   });
@@ -83,19 +99,22 @@ export async function getAttendanceByDate(
  */
 export async function saveAttendanceForDate(
   dateStr: string,
-  records: { student: Student; status: AttendanceStatus; joinTime?: string }[]
+  records: { student: Student; status: AttendanceStatus; joinTime?: string }[],
+  classId?: string
 ): Promise<void> {
   const now = new Date().toISOString();
   const localMap = getLocalAttendance();
 
   for (const item of records) {
-    const attendanceId = `${item.student.id}_${dateStr}`;
-    const existingRec = localMap[attendanceId];
+    const attendanceId = buildAttendanceId(classId, item.student.id, dateStr);
+    const legacyId = `${item.student.id}_${dateStr}`;
+    const existingRec = localMap[attendanceId] || localMap[legacyId];
     const joinTime =
       item.status === 'late' ? item.joinTime || existingRec?.joinTime || now : '';
 
     const record: AttendanceRecord = {
       id: attendanceId,
+      classId,
       studentId: item.student.id,
       studentName: item.student.name,
       studentEmail: item.student.email,
@@ -140,7 +159,7 @@ export async function getMonthlyAttendance(
         where('date', '>=', startDate),
         where('date', '<=', endDate)
       );
-      const snap = await getDocs(q);
+      const snap = await withFirestoreTimeout(getDocs(q));
       const records: AttendanceRecord[] = [];
       snap.forEach((d) => {
         records.push(d.data() as AttendanceRecord);
@@ -153,4 +172,48 @@ export async function getMonthlyAttendance(
 
   const localMap = getLocalAttendance();
   return Object.values(localMap).filter((rec) => rec.date && rec.date.startsWith(prefix));
+}
+
+function sortAttendanceNewest(records: AttendanceRecord[]): AttendanceRecord[] {
+  return [...records].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}
+
+export function getAttendanceForStudentLocal(
+  studentId: string,
+  classId?: string
+): AttendanceRecord[] {
+  const localMap = getLocalAttendance();
+  return sortAttendanceNewest(
+    Object.values(localMap).filter(
+      (rec) => rec.studentId === studentId && matchesClassFilter(rec, classId)
+    )
+  );
+}
+
+/**
+ * Fetch every saved attendance record for one student, newest date first.
+ */
+export async function getAttendanceForStudent(
+  studentId: string,
+  classId?: string
+): Promise<AttendanceRecord[]> {
+  const local = getAttendanceForStudentLocal(studentId, classId);
+
+  if (isFirebaseConfigured && db) {
+    try {
+      const q = query(collection(db, 'attendance'), where('studentId', '==', studentId));
+      const snap = await withFirestoreTimeout(getDocs(q));
+      const records: AttendanceRecord[] = [];
+      snap.forEach((d) => {
+        records.push(d.data() as AttendanceRecord);
+      });
+      return sortAttendanceNewest(
+        records.filter((rec) => matchesClassFilter(rec, classId))
+      );
+    } catch (err) {
+      console.warn('Error fetching student attendance from Firestore, checking local:', err);
+    }
+  }
+
+  return local;
 }

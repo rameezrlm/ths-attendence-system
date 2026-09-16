@@ -13,6 +13,8 @@ import {
 import { TicketProgress, TicketStatusBadge } from './TicketStatusBadge';
 
 interface TeacherTicketsProps {
+  classId?: string;
+  classStudentIds?: string[];
   session: UserSession;
   showToast: (type: 'success' | 'error', message: string) => void;
   onStatsChange?: (pending: number) => void;
@@ -21,7 +23,23 @@ interface TeacherTicketsProps {
 
 type TicketFilter = TicketStatus | 'all';
 
+function filterTicketsForClass(
+  list: Ticket[],
+  classId?: string,
+  classStudentIds?: string[]
+): Ticket[] {
+  if (!classId) return list;
+  const studentSet = new Set(classStudentIds || []);
+  return list.filter(
+    (ticket) =>
+      ticket.classId === classId ||
+      (!ticket.classId && studentSet.has(ticket.studentId))
+  );
+}
+
 export const TeacherTickets: React.FC<TeacherTicketsProps> = ({
+  classId,
+  classStudentIds,
   session,
   showToast,
   onStatsChange,
@@ -36,7 +54,7 @@ export const TeacherTickets: React.FC<TeacherTicketsProps> = ({
   const loadTickets = async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-      const list = await fetchTickets();
+      const list = filterTicketsForClass(await fetchTickets(), classId, classStudentIds);
       setTickets(list);
       onStatsChange?.(pendingTicketCount(list));
     } catch (err) {
@@ -52,7 +70,7 @@ export const TeacherTickets: React.FC<TeacherTicketsProps> = ({
     return subscribeTicketUpdates(() => {
       void loadTickets(true);
     });
-  }, []);
+  }, [classId, classStudentIds]);
 
   const filtered = useMemo(() => {
     if (filter === 'all') return tickets;

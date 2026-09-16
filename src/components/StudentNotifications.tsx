@@ -5,22 +5,31 @@ import {
   fetchStudentTickets,
   formatTicketTime,
   markStudentTicketsSeen,
+  readTicketsLocal,
   subscribeTicketUpdates,
   TICKET_STATUS_LABELS,
 } from '../services/ticketService';
 import { TicketProgress, TicketStatusBadge } from './TicketStatusBadge';
 
 interface StudentNotificationsProps {
+  classId: string;
   studentId: string;
   onNotificationsSeen?: () => void;
 }
 
 export const StudentNotifications: React.FC<StudentNotificationsProps> = ({
+  classId,
   studentId,
   onNotificationsSeen,
 }) => {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [tickets, setTickets] = useState(() =>
+    readTicketsLocal().filter(
+      (ticket) => ticket.studentId === studentId && ticket.classId === classId
+    )
+  );
+  const [isLoading, setIsLoading] = useState(
+    () => readTicketsLocal().filter((ticket) => ticket.studentId === studentId).length === 0
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -28,7 +37,9 @@ export const StudentNotifications: React.FC<StudentNotificationsProps> = ({
     const load = async (silent = false) => {
       if (!silent) setIsLoading(true);
       try {
-        const list = await fetchStudentTickets(studentId);
+        const list = (await fetchStudentTickets(studentId)).filter(
+          (ticket) => ticket.classId === classId
+        );
         if (cancelled) return;
         setTickets(list);
         await markStudentTicketsSeen(studentId);
@@ -40,7 +51,8 @@ export const StudentNotifications: React.FC<StudentNotificationsProps> = ({
       }
     };
 
-    void load();
+    const hasCache = readTicketsLocal().some((ticket) => ticket.studentId === studentId);
+    void load(hasCache);
     const unsubscribe = subscribeTicketUpdates(() => {
       void load(true);
     });
@@ -48,7 +60,7 @@ export const StudentNotifications: React.FC<StudentNotificationsProps> = ({
       cancelled = true;
       unsubscribe();
     };
-  }, [studentId]);
+  }, [studentId, classId]);
 
   const notifications = useMemo(
     () => tickets.filter((t) => t.status !== 'open'),

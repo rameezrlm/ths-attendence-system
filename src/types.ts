@@ -13,6 +13,7 @@ export interface Student {
 
 export interface AttendanceRecord {
   id: string;
+  classId?: string;
   studentId: string;
   studentName: string;
   studentEmail: string;
@@ -29,7 +30,13 @@ export interface AttendanceDayEntry {
   joinTime?: string;
 }
 
-export type AttendanceFilter = 'all' | 'present' | 'late';
+export type AttendanceFilter =
+  | 'all'
+  | 'present'
+  | 'absent'
+  | 'late'
+  | 'early_left'
+  | 'unmarked';
 
 export interface Teacher {
   id: string;
@@ -43,7 +50,18 @@ export interface UserSession {
   role: 'admin' | 'teacher' | 'student';
   name: string;
   email: string;
+  teacherId?: string;
   studentId?: string;
+}
+
+/** Admin-created course/class with assigned teachers and students. */
+export interface LabClass {
+  id: string;
+  name: string;
+  description?: string;
+  teacherIds: string[];
+  studentIds: string[];
+  createdAt: string;
 }
 
 export interface AttendanceSummary {
@@ -58,6 +76,7 @@ export interface AttendanceSummary {
 /** Gradebook section such as Quiz, Assignment, or Project. Created once. */
 export interface GradeSection {
   id: string;
+  classId?: string;
   name: string;
   totalMarks: number;
   createdAt: string;
@@ -87,6 +106,7 @@ export type TicketStatus = 'open' | 'approved' | 'in_progress' | 'resolved';
 
 export interface AssignmentMaterial {
   id: string;
+  classId?: string;
   title: string;
   description: string;
   fileName: string;
@@ -98,6 +118,7 @@ export interface AssignmentMaterial {
   createdAt: string;
   closesAt: string;
   localOnly?: boolean;
+  fileBackend?: 'storage' | 'firestore';
 }
 
 export interface AssignmentSubmission {
@@ -113,10 +134,12 @@ export interface AssignmentSubmission {
   storagePath: string;
   submittedAt: string;
   localOnly?: boolean;
+  fileBackend?: 'storage' | 'firestore';
 }
 
 export interface Announcement {
   id: string;
+  classId?: string;
   title: string;
   message: string;
   createdBy: string;
@@ -125,6 +148,7 @@ export interface Announcement {
 
 export interface Ticket {
   id: string;
+  classId?: string;
   studentId: string;
   studentName: string;
   studentEmail: string;

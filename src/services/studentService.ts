@@ -1,6 +1,7 @@
 import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase/firebaseConfig';
 import type { Student } from '../types';
+import { withFirestoreTimeout } from '../utils/firestoreTimeout';
 
 const STORAGE_KEY = 'it_lab_students';
 
@@ -26,10 +27,20 @@ function saveLocalStudents(students: Student[]) {
   }
 }
 
+export function getStudentByIdLocal(id: string): Student | null {
+  return getLocalStudents().find((s) => s.id === id) ?? null;
+}
+
+export function readStudentsLocal(): Student[] {
+  return getLocalStudents();
+}
+
 export async function fetchStudents(): Promise<Student[]> {
+  const local = getLocalStudents();
+
   if (isFirebaseConfigured && db) {
     try {
-      const snap = await getDocs(collection(db, 'students'));
+      const snap = await withFirestoreTimeout(getDocs(collection(db, 'students')));
       if (!snap.empty) {
         const list: Student[] = [];
         snap.forEach((d) => {
@@ -49,7 +60,6 @@ export async function fetchStudents(): Promise<Student[]> {
       }
 
       // If Firestore is currently empty, check if we have any existing local students to upload
-      const local = getLocalStudents();
       if (local.length > 0) {
         for (const s of local) {
           try {
@@ -65,11 +75,11 @@ export async function fetchStudents(): Promise<Student[]> {
       return [];
     } catch (error) {
       console.warn('Firestore fetch error, reading local cache:', error);
-      return getLocalStudents();
+      return local;
     }
   }
 
-  return getLocalStudents();
+  return local;
 }
 
 export async function addStudent(
@@ -119,8 +129,13 @@ export async function deleteStudent(studentId: string): Promise<void> {
 }
 
 export async function getStudentById(id: string): Promise<Student | null> {
-  const list = await fetchStudents();
-  return list.find((s) => s.id === id) ?? null;
+  const cached = getStudentByIdLocal(id);
+  try {
+    const list = await fetchStudents();
+    return list.find((s) => s.id === id) ?? cached;
+  } catch {
+    return cached;
+  }
 }
 
 export async function updateStudent(

@@ -17,6 +17,8 @@ import {
   Plus,
   X,
   Ticket as TicketIcon,
+  CalendarDays,
+  BookOpen,
 } from 'lucide-react';
 import {
   fetchStudents,
@@ -32,6 +34,9 @@ import {
 } from '../services/teacherService';
 import { fetchTickets, pendingTicketCount } from '../services/ticketService';
 import { TeacherTickets } from './TeacherTickets';
+import { AdminAttendance } from './AdminAttendance';
+import { AdminClasses } from './AdminClasses';
+import { fetchClasses } from '../services/classService';
 import type { Student, Teacher, UserSession } from '../types';
 
 interface AdminDashboardProps {
@@ -40,7 +45,47 @@ interface AdminDashboardProps {
   todayDisplay: string;
 }
 
-type AdminViewMode = 'overview' | 'students' | 'teachers' | 'tickets';
+type AdminViewMode = 'overview' | 'classes' | 'students' | 'teachers' | 'attendance' | 'tickets';
+
+const AdminQuickTabs: React.FC<{
+  viewMode: AdminViewMode;
+  onChange: (mode: AdminViewMode) => void;
+  classesCount: number;
+  studentsCount: number;
+  teachersCount: number;
+  pendingTickets: number;
+}> = ({ viewMode, onChange, classesCount, studentsCount, teachersCount, pendingTickets }) => {
+  const tabs: { id: AdminViewMode; label: string; activeClass: string }[] = [
+    { id: 'overview', label: 'Overview', activeClass: 'text-slate-800' },
+    { id: 'classes', label: `Classes (${classesCount})`, activeClass: 'text-violet-700' },
+    { id: 'students', label: `Students (${studentsCount})`, activeClass: 'text-indigo-700' },
+    { id: 'teachers', label: `Teachers (${teachersCount})`, activeClass: 'text-emerald-700' },
+    { id: 'attendance', label: 'Attendance', activeClass: 'text-sky-700' },
+    { id: 'tickets', label: `Tickets (${pendingTickets})`, activeClass: 'text-amber-700' },
+  ];
+
+  return (
+    <div className="inline-flex flex-wrap p-0.5 bg-slate-200/80 rounded-lg">
+      {tabs.map((tab) => {
+        const isActive = viewMode === tab.id;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onChange(tab.id)}
+            className={
+              isActive
+                ? `px-3 py-1 text-xs font-semibold bg-white ${tab.activeClass} rounded-md shadow-xs cursor-default`
+                : 'px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer'
+            }
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   session,
@@ -54,6 +99,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isLoadingStudents, setIsLoadingStudents] = useState(true);
   const [isLoadingTeachers, setIsLoadingTeachers] = useState(true);
   const [pendingTickets, setPendingTickets] = useState(0);
+  const [classesCount, setClassesCount] = useState(0);
 
   // Search states
   const [studentSearch, setStudentSearch] = useState('');
@@ -138,6 +184,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setPendingTickets(pendingTicketCount(tickets));
     } catch (err) {
       console.error('Failed to load tickets:', err);
+    }
+
+    try {
+      const classList = await fetchClasses();
+      setClassesCount(classList.length);
+    } catch (err) {
+      console.error('Failed to load classes:', err);
     }
   };
 
@@ -389,7 +442,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
           {/* Logo & Title */}
-          <div className="flex items-center gap-3">
+          <button
+            id="btn-admin-go-home"
+            type="button"
+            onClick={() => setViewMode('overview')}
+            title="Go to home"
+            className="flex items-center gap-3 rounded-lg px-1 py-1 -ml-1 hover:bg-slate-50 transition-colors cursor-pointer text-left"
+          >
             <div className="w-9 h-9 rounded-lg border border-slate-200 p-1 bg-white shadow-xs flex items-center justify-center shrink-0">
               <img
                 src="/logo.png"
@@ -412,7 +471,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 Taleem-O-Hunar Society
               </p>
             </div>
-          </div>
+          </button>
 
           {/* Right: Today Date, Profile, Logout */}
           <div className="flex items-center gap-3 sm:gap-4">
@@ -462,13 +521,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 Administration Console
               </h2>
               <p className="text-xs text-slate-500 mt-1">
-                Manage students, teachers, and student tickets.
+                Create class sections, assign teachers and students, then manage attendance and tickets.
               </p>
             </div>
 
-            {/* PRIMARY CARDS: STUDENTS, TEACHERS, TICKETS */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Card 1: Students */}
+            {/* PRIMARY CARDS */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-6">
+              {/* Card 1: Classes / Sections */}
+              <div
+                id="card-open-classes"
+                onClick={() => setViewMode('classes')}
+                className="group bg-white rounded-2xl border border-slate-200 p-6 shadow-xs hover:shadow-md hover:border-violet-400 transition-all cursor-pointer flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-12 h-12 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center group-hover:scale-105 group-hover:bg-violet-600 group-hover:text-white transition-all shadow-xs">
+                      <BookOpen className="w-6 h-6" />
+                    </div>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-100">
+                      {classesCount} Sections
+                    </span>
+                  </div>
+
+                  <h3 className="text-base font-bold text-slate-900 group-hover:text-violet-600 transition-colors">
+                    Classes
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                    Create a section, then assign teachers and students to that class. Teachers and students only see their enrolled courses.
+                  </p>
+                </div>
+
+                <div className="pt-6 mt-6 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-violet-600 group-hover:text-violet-700">
+                  <span>Open Class Management</span>
+                  <ChevronRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* Card 2: Students */}
               <div
                 id="card-open-students"
                 onClick={() => setViewMode('students')}
@@ -498,7 +587,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Card 2: Teachers */}
+              {/* Card 3: Teachers */}
               <div
                 id="card-open-teachers"
                 onClick={() => setViewMode('teachers')}
@@ -528,7 +617,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Card 3: Tickets */}
+              {/* Card 4: Attendance */}
+              <div
+                id="card-open-attendance"
+                onClick={() => setViewMode('attendance')}
+                className="group bg-white rounded-2xl border border-slate-200 p-6 shadow-xs hover:shadow-md hover:border-sky-400 transition-all cursor-pointer flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-12 h-12 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center group-hover:scale-105 group-hover:bg-sky-600 group-hover:text-white transition-all shadow-xs">
+                      <CalendarDays className="w-6 h-6" />
+                    </div>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-700 border border-sky-100">
+                      Edit any date
+                    </span>
+                  </div>
+
+                  <h3 className="text-base font-bold text-slate-900 group-hover:text-sky-600 transition-colors">
+                    Attendance
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+                    Mark today or open any past date to correct attendance. Saved records can be updated at any time.
+                  </p>
+                </div>
+
+                <div className="pt-6 mt-6 border-t border-slate-100 flex items-center justify-between text-xs font-semibold text-sky-600 group-hover:text-sky-700">
+                  <span>Open Attendance Editor</span>
+                  <ChevronRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+
+              {/* Card 5: Tickets */}
               <div
                 id="card-open-tickets"
                 onClick={() => setViewMode('tickets')}
@@ -561,7 +680,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-        {/* VIEW 2: STUDENTS MANAGEMENT SCREEN */}
+        {/* VIEW 2: CLASSES / SECTIONS */}
+        {viewMode === 'classes' && (
+          <div className="space-y-6 animate-in fade-in duration-150">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('overview')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to Overview</span>
+                </button>
+
+                <div className="h-4 w-px bg-slate-200" />
+
+                <div className="flex items-center gap-1 text-xs">
+                  <span className="text-slate-400">Admin</span>
+                  <span className="text-slate-300">/</span>
+                  <span className="font-semibold text-slate-800">Class Sections</span>
+                </div>
+              </div>
+
+              <AdminQuickTabs
+                viewMode={viewMode}
+                onChange={setViewMode}
+                classesCount={classesCount}
+                studentsCount={students.length}
+                teachersCount={teachers.length}
+                pendingTickets={pendingTickets}
+              />
+            </div>
+
+            <AdminClasses
+              students={students}
+              teachers={teachers}
+              showToast={showToast}
+              onClassesChanged={setClassesCount}
+            />
+          </div>
+        )}
+
+        {/* VIEW 3: STUDENTS MANAGEMENT SCREEN */}
         {viewMode === 'students' && (
           <div className="space-y-6 animate-in fade-in duration-150">
             {/* Top Navigation & Breadcrumbs */}
@@ -585,36 +746,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Quick Tab Switcher */}
-              <div className="inline-flex p-0.5 bg-slate-200/80 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('overview')}
-                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
-                >
-                  Overview
-                </button>
-                <button
-                  type="button"
-                  className="px-3 py-1 text-xs font-semibold bg-white text-indigo-700 rounded-md shadow-xs cursor-default"
-                >
-                  Students ({students.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('teachers')}
-                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
-                >
-                  Teachers ({teachers.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('tickets')}
-                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
-                >
-                  Tickets ({pendingTickets})
-                </button>
-              </div>
+              <AdminQuickTabs
+                viewMode={viewMode}
+                onChange={setViewMode}
+                classesCount={classesCount}
+                studentsCount={students.length}
+                teachersCount={teachers.length}
+                pendingTickets={pendingTickets}
+              />
             </div>
 
             {/* Students Table Container */}
@@ -798,36 +937,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Quick Tab Switcher */}
-              <div className="inline-flex p-0.5 bg-slate-200/80 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('overview')}
-                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
-                >
-                  Overview
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('students')}
-                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
-                >
-                  Students ({students.length})
-                </button>
-                <button
-                  type="button"
-                  className="px-3 py-1 text-xs font-semibold bg-white text-emerald-700 rounded-md shadow-xs cursor-default"
-                >
-                  Teachers ({teachers.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('tickets')}
-                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
-                >
-                  Tickets ({pendingTickets})
-                </button>
-              </div>
+              <AdminQuickTabs
+                viewMode={viewMode}
+                onChange={setViewMode}
+                classesCount={classesCount}
+                studentsCount={students.length}
+                teachersCount={teachers.length}
+                pendingTickets={pendingTickets}
+              />
             </div>
 
             {/* Teachers Table Container */}
@@ -977,7 +1094,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
         )}
 
-        {/* VIEW 4: STUDENT TICKETS */}
+        {/* VIEW 4: ATTENDANCE EDITOR */}
+        {viewMode === 'attendance' && (
+          <div className="space-y-6 animate-in fade-in duration-150">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('overview')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to Overview</span>
+                </button>
+
+                <div className="h-4 w-px bg-slate-200" />
+
+                <div className="flex items-center gap-1 text-xs">
+                  <span className="text-slate-400">Admin</span>
+                  <span className="text-slate-300">/</span>
+                  <span className="font-semibold text-slate-800">Attendance</span>
+                </div>
+              </div>
+
+              <AdminQuickTabs
+                viewMode={viewMode}
+                onChange={setViewMode}
+                classesCount={classesCount}
+                studentsCount={students.length}
+                teachersCount={teachers.length}
+                pendingTickets={pendingTickets}
+              />
+            </div>
+
+            <AdminAttendance
+              students={students}
+              isLoadingStudents={isLoadingStudents}
+              showToast={showToast}
+            />
+          </div>
+        )}
+
+        {/* VIEW 5: STUDENT TICKETS */}
         {viewMode === 'tickets' && (
           <div className="space-y-6 animate-in fade-in duration-150">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1000,35 +1158,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="inline-flex p-0.5 bg-slate-200/80 rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('overview')}
-                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
-                >
-                  Overview
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('students')}
-                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
-                >
-                  Students ({students.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('teachers')}
-                  className="px-3 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-md transition-colors cursor-pointer"
-                >
-                  Teachers ({teachers.length})
-                </button>
-                <button
-                  type="button"
-                  className="px-3 py-1 text-xs font-semibold bg-white text-amber-700 rounded-md shadow-xs cursor-default"
-                >
-                  Tickets ({pendingTickets})
-                </button>
-              </div>
+              <AdminQuickTabs
+                viewMode={viewMode}
+                onChange={setViewMode}
+                classesCount={classesCount}
+                studentsCount={students.length}
+                teachersCount={teachers.length}
+                pendingTickets={pendingTickets}
+              />
             </div>
 
             <TeacherTickets

@@ -27,6 +27,7 @@ import {
 } from '../services/gradebookService';
 
 interface TeacherGradebookProps {
+  classId: string;
   students: Student[];
   showToast: (type: 'success' | 'error', message: string) => void;
 }
@@ -50,6 +51,7 @@ function parseMarksInput(raw: string, max: number): { value: number | null; erro
 }
 
 export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
+  classId,
   students,
   showToast,
 }) => {
@@ -92,8 +94,10 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
           fetchGradeMarks(),
         ]);
         if (cancelled) return;
-        setSections(sectionList);
-        setAssessments(assessmentList);
+        const classSections = sectionList.filter((section) => section.classId === classId);
+        const sectionIds = new Set(classSections.map((section) => section.id));
+        setSections(classSections);
+        setAssessments(assessmentList.filter((item) => sectionIds.has(item.sectionId)));
 
         const map = marksToMap(markList);
         const asStrings: Record<string, string> = {};
@@ -113,7 +117,7 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [classId, showToast]);
 
   const assessmentsBySection = useMemo(() => {
     const grouped: Record<string, GradeAssessment[]> = {};
@@ -164,7 +168,7 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
 
     try {
       setIsCreating(true);
-      const created = await createGradeSection(name);
+      const created = await createGradeSection(name, 0, classId);
       setSections((prev) => [...prev, created]);
       setSectionName('');
       setIsCreateOpen(false);

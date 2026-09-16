@@ -1,6 +1,7 @@
 import { collection, getDocs, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase/firebaseConfig';
 import type { Ticket, TicketStatus } from '../types';
+import { withFirestoreTimeout } from '../utils/firestoreTimeout';
 
 const TICKETS_KEY = 'it_lab_tickets';
 const TICKETS_CHANGED_EVENT = 'it-lab-tickets-changed';
@@ -128,6 +129,15 @@ export function subscribeTicketUpdates(onChange: () => void): () => void {
   };
 }
 
+export function readTicketsLocal(): Ticket[] {
+  return sortTickets(
+    readTickets().map((ticket) => ({
+      ...ticket,
+      status: normalizeTicketStatus(ticket.status),
+    }))
+  );
+}
+
 export async function fetchTickets(): Promise<Ticket[]> {
   const hydrate = (list: Ticket[]) =>
     sortTickets(
@@ -137,15 +147,16 @@ export async function fetchTickets(): Promise<Ticket[]> {
       }))
     );
 
+  const local = hydrate(readTickets());
+
   if (isFirebaseConfigured && db) {
     try {
-      const snap = await getDocs(collection(db, 'tickets'));
+      const snap = await withFirestoreTimeout(getDocs(collection(db, 'tickets')));
       if (!snap.empty) {
         const remote: Ticket[] = [];
         snap.forEach((d) => {
           remote.push({ ...(d.data() as Ticket), id: d.id });
         });
-        const local = hydrate(readTickets());
         const merged = hydrate(mergeTickets(remote, local));
         writeTickets(merged);
 
@@ -158,7 +169,6 @@ export async function fetchTickets(): Promise<Ticket[]> {
         return merged;
       }
 
-      const local = hydrate(readTickets());
       if (local.length > 0) {
         for (const ticket of local) {
           try {
@@ -174,11 +184,11 @@ export async function fetchTickets(): Promise<Ticket[]> {
       return [];
     } catch (err) {
       console.warn('Error fetching tickets from Firestore, using local:', err);
-      return hydrate(readTickets());
+      return local;
     }
   }
 
-  return hydrate(readTickets());
+  return local;
 }
 
 export async function fetchStudentTickets(studentId: string): Promise<Ticket[]> {
@@ -192,6 +202,7 @@ export async function createTicket(input: {
   studentEmail: string;
   subject: string;
   message: string;
+  classId?: string;
 }): Promise<Ticket> {
   const subject = input.subject.trim();
   const message = input.message.trim();
@@ -205,6 +216,7 @@ export async function createTicket(input: {
   const now = new Date().toISOString();
   const ticket: Ticket = {
     id: newId(),
+    classId: input.classId,
     studentId: input.studentId,
     studentName: input.studentName,
     studentEmail: input.studentEmail,

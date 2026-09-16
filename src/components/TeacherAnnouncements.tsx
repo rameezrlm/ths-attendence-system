@@ -10,11 +10,13 @@ import {
 } from '../services/announcementService';
 
 interface TeacherAnnouncementsProps {
+  classId: string;
   session: UserSession;
   showToast: (type: 'success' | 'error', message: string) => void;
 }
 
 export const TeacherAnnouncements: React.FC<TeacherAnnouncementsProps> = ({
+  classId,
   session,
   showToast,
 }) => {
@@ -29,7 +31,8 @@ export const TeacherAnnouncements: React.FC<TeacherAnnouncementsProps> = ({
   const loadAnnouncements = async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-      setAnnouncements(await fetchAnnouncements());
+      const list = await fetchAnnouncements();
+      setAnnouncements(list.filter((item) => item.classId === classId));
     } catch (err) {
       console.error('Failed to load announcements:', err);
       if (!silent) showToast('error', 'Failed to load announcements.');
@@ -43,7 +46,7 @@ export const TeacherAnnouncements: React.FC<TeacherAnnouncementsProps> = ({
     return subscribeAnnouncementUpdates(() => {
       void loadAnnouncements(true);
     });
-  }, []);
+  }, [classId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,6 +58,7 @@ export const TeacherAnnouncements: React.FC<TeacherAnnouncementsProps> = ({
         title,
         message,
         createdBy: session.name,
+        classId,
       });
       setAnnouncements((prev) => [created, ...prev.filter((item) => item.id !== created.id)]);
       setTitle('');

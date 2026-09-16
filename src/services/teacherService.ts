@@ -33,6 +33,20 @@ function saveLocalTeachers(teachers: Teacher[]) {
   }
 }
 
+export function getTeacherByIdLocal(id: string): Teacher | null {
+  return getLocalTeachers().find((t) => t.id === id) ?? null;
+}
+
+export async function getTeacherById(id: string): Promise<Teacher | null> {
+  const cached = getTeacherByIdLocal(id);
+  try {
+    const list = await fetchTeachers();
+    return list.find((t) => t.id === id) ?? cached;
+  } catch {
+    return cached;
+  }
+}
+
 export async function fetchTeachers(): Promise<Teacher[]> {
   if (isFirebaseConfigured && db) {
     try {
@@ -185,6 +199,7 @@ export async function loginUser(identifier: string, password: string): Promise<U
       role: 'teacher',
       name: matched.name,
       email: matched.email,
+      teacherId: matched.id,
     };
     localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
     return session;

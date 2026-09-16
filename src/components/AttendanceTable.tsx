@@ -7,6 +7,7 @@ import {
   RotateCcw,
   Clock,
   FileSpreadsheet,
+  AlertCircle,
 } from 'lucide-react';
 import type { AttendanceDayEntry, AttendanceFilter, AttendanceStatus, Student } from '../types';
 
@@ -24,6 +25,8 @@ interface AttendanceTableProps {
   onClearAll: () => void;
   onSaveAttendance: () => Promise<void>;
   onOpenMonthlyReport: () => void;
+  title?: string;
+  existingRecordsHint?: string;
 }
 
 const STATUS_CONFIG: Record<
@@ -80,11 +83,19 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
   onClearAll,
   onSaveAttendance,
   onOpenMonthlyReport,
+  title = "Today's Attendance",
+  existingRecordsHint = "Today's records already saved. Click below to update.",
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [confirmAction, setConfirmAction] = useState<'mark_all_present' | 'clear_all' | null>(
+    null
+  );
 
   const presentCount = students.filter((s) => attendanceMap[s.id]?.status === 'present').length;
+  const absentCount = students.filter((s) => attendanceMap[s.id]?.status === 'absent').length;
   const lateCount = students.filter((s) => attendanceMap[s.id]?.status === 'late').length;
+  const earlyLeftCount = students.filter((s) => attendanceMap[s.id]?.status === 'early_left').length;
+  const unmarkedCount = students.filter((s) => !attendanceMap[s.id]).length;
 
   const filteredStudents = useMemo(() => {
     return students.filter((student) => {
@@ -93,22 +104,23 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
         student.email.toLowerCase().includes(searchTerm.toLowerCase());
       if (!matchesSearch) return false;
 
-      if (statusFilter === 'present') {
-        return attendanceMap[student.id]?.status === 'present';
-      }
-      if (statusFilter === 'late') {
-        return attendanceMap[student.id]?.status === 'late';
-      }
+      const status = attendanceMap[student.id]?.status;
+      if (statusFilter === 'present') return status === 'present';
+      if (statusFilter === 'absent') return status === 'absent';
+      if (statusFilter === 'late') return status === 'late';
+      if (statusFilter === 'early_left') return status === 'early_left';
+      if (statusFilter === 'unmarked') return !status;
       return true;
     });
   }, [students, searchTerm, statusFilter, attendanceMap]);
 
-  const unmarkedCount = students.filter((s) => !attendanceMap[s.id]).length;
-
   const emptyTitle = (() => {
     if (searchTerm || statusFilter !== 'all') {
       if (statusFilter === 'present') return 'No present students';
+      if (statusFilter === 'absent') return 'No absent students';
       if (statusFilter === 'late') return 'No late students';
+      if (statusFilter === 'early_left') return 'No early left students';
+      if (statusFilter === 'unmarked') return 'No unmarked students';
       return 'No matching students found';
     }
     return 'No students enrolled';
@@ -116,7 +128,12 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
 
   const emptyHint = (() => {
     if (statusFilter === 'present') return 'Mark students as Present to see them in this filter.';
+    if (statusFilter === 'absent') return 'Mark students as Absent to see them in this filter.';
     if (statusFilter === 'late') return 'Mark students as Late to see them in this filter.';
+    if (statusFilter === 'early_left') {
+      return 'Mark students as Early Left to see them in this filter.';
+    }
+    if (statusFilter === 'unmarked') return 'All students have been marked for this date.';
     if (searchTerm) return 'Try searching with another name or email';
     return 'Please contact the administrator to register students in the system.';
   })();
@@ -135,12 +152,39 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
       activeClasses: 'bg-green-600 text-white border-green-600',
     },
     {
+      id: 'absent',
+      label: 'Absent',
+      count: absentCount,
+      activeClasses: 'bg-red-600 text-white border-red-600',
+    },
+    {
       id: 'late',
       label: 'Late',
       count: lateCount,
       activeClasses: 'bg-amber-600 text-white border-amber-600',
     },
+    {
+      id: 'early_left',
+      label: 'Early Left',
+      count: earlyLeftCount,
+      activeClasses: 'bg-teal-600 text-white border-teal-600',
+    },
+    {
+      id: 'unmarked',
+      label: 'Unmarked',
+      count: unmarkedCount,
+      activeClasses: 'bg-slate-600 text-white border-slate-600',
+    },
   ];
+
+  const handleConfirmAction = () => {
+    if (confirmAction === 'mark_all_present') {
+      onMarkAllPresent();
+    } else if (confirmAction === 'clear_all') {
+      onClearAll();
+    }
+    setConfirmAction(null);
+  };
 
   return (
     <div id="attendance-table-container" className="space-y-4">
@@ -150,7 +194,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
           <div className="flex items-center gap-3 flex-wrap">
             <div>
               <h2 className="text-sm sm:text-base font-bold text-slate-900">
-                Today's Attendance
+                {title}
               </h2>
               <p className="text-xs text-slate-500">
                 {todayDisplay}
@@ -183,7 +227,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
             <button
               id="btn-mark-all-present"
               type="button"
-              onClick={onMarkAllPresent}
+              onClick={() => setConfirmAction('mark_all_present')}
               disabled={students.length === 0}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100 border border-green-200 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
               title="Mark all students as Present"
@@ -195,7 +239,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
             <button
               id="btn-clear-all-attendance"
               type="button"
-              onClick={onClearAll}
+              onClick={() => setConfirmAction('clear_all')}
               disabled={students.length === 0}
               className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer disabled:opacity-40"
               title="Reset all status selections"
@@ -367,7 +411,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
               )}
               {hasExistingRecords && (
                 <span className="text-slate-400 text-xs hidden sm:inline">
-                  (Today's records already saved. Click below to update.)
+                  ({existingRecordsHint})
                 </span>
               )}
             </div>
@@ -391,6 +435,59 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
           </div>
         )}
       </div>
+
+      {confirmAction && (
+        <div
+          id="modal-attendance-confirm-overlay"
+          className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+        >
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl border border-slate-200 text-center">
+            <div
+              className={`w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-3 ${
+                confirmAction === 'mark_all_present'
+                  ? 'bg-green-100 text-green-600'
+                  : 'bg-amber-100 text-amber-600'
+              }`}
+            >
+              {confirmAction === 'mark_all_present' ? (
+                <Check className="w-5 h-5" />
+              ) : (
+                <AlertCircle className="w-5 h-5" />
+              )}
+            </div>
+            <h3 className="text-sm font-bold text-slate-900 mb-1">
+              {confirmAction === 'mark_all_present' ? 'Mark All Present?' : 'Clear All Marks?'}
+            </h3>
+            <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+              {confirmAction === 'mark_all_present'
+                ? `This will mark all ${students.length} students as Present for ${todayDisplay}. You can still change individual students before saving.`
+                : `This will remove all attendance marks for ${todayDisplay}. You will need to mark every student again before saving.`}
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              <button
+                id="btn-cancel-attendance-action"
+                type="button"
+                onClick={() => setConfirmAction(null)}
+                className="px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                id="btn-confirm-attendance-action"
+                type="button"
+                onClick={handleConfirmAction}
+                className={`px-3.5 py-1.5 text-xs font-semibold text-white rounded-lg transition-colors cursor-pointer shadow-xs ${
+                  confirmAction === 'mark_all_present'
+                    ? 'bg-green-600 hover:bg-green-700'
+                    : 'bg-amber-600 hover:bg-amber-700'
+                }`}
+              >
+                {confirmAction === 'mark_all_present' ? 'Mark All Present' : 'Clear All'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,6 +1,7 @@
 import { collection, deleteDoc, doc, getDocs, onSnapshot, setDoc } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../firebase/firebaseConfig';
 import type { Announcement } from '../types';
+import { withFirestoreTimeout } from '../utils/firestoreTimeout';
 
 const ANNOUNCEMENTS_KEY = 'it_lab_announcements';
 const ANNOUNCEMENTS_CHANGED_EVENT = 'it-lab-announcements-changed';
@@ -93,10 +94,16 @@ export function subscribeAnnouncementUpdates(onChange: () => void): () => void {
   };
 }
 
+export function readAnnouncementsLocal(): Announcement[] {
+  return sortAnnouncements(readAnnouncements());
+}
+
 export async function fetchAnnouncements(): Promise<Announcement[]> {
+  const local = sortAnnouncements(readAnnouncements());
+
   if (isFirebaseConfigured && db) {
     try {
-      const snap = await getDocs(collection(db, 'announcements'));
+      const snap = await withFirestoreTimeout(getDocs(collection(db, 'announcements')));
       if (!snap.empty) {
         const list: Announcement[] = [];
         snap.forEach((d) => {
@@ -107,7 +114,6 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
         return sorted;
       }
 
-      const local = sortAnnouncements(readAnnouncements());
       if (local.length > 0) {
         for (const announcement of local) {
           try {
@@ -123,17 +129,18 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
       return [];
     } catch (err) {
       console.warn('Error fetching announcements from Firestore, using local:', err);
-      return sortAnnouncements(readAnnouncements());
+      return local;
     }
   }
 
-  return sortAnnouncements(readAnnouncements());
+  return local;
 }
 
 export async function createAnnouncement(input: {
   title: string;
   message: string;
   createdBy: string;
+  classId?: string;
 }): Promise<Announcement> {
   const title = input.title.trim();
   const message = input.message.trim();
@@ -146,6 +153,7 @@ export async function createAnnouncement(input: {
 
   const announcement: Announcement = {
     id: newId(),
+    classId: input.classId,
     title,
     message,
     createdBy: input.createdBy,

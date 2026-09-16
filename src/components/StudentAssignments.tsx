@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Clock, Download, FileText } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock, Download, FileText } from 'lucide-react';
 import type { AssignmentMaterial, AssignmentSubmission } from '../types';
 import {
   downloadAssignment,
@@ -8,10 +8,13 @@ import {
   formatAssignmentTime,
   formatFileSize,
   isAssignmentClosed,
+  readAssignmentsLocal,
+  readAssignmentSubmissionsLocal,
   submitAssignmentWork,
 } from '../services/assignmentService';
 
 interface StudentAssignmentsProps {
+  classId: string;
   studentId: string;
   studentName: string;
   studentEmail: string;
@@ -35,38 +38,54 @@ function UploadProgress({ percent }: { percent: number }) {
 }
 
 export const StudentAssignments: React.FC<StudentAssignmentsProps> = ({
+  classId,
   studentId,
   studentName,
   studentEmail,
 }) => {
-  const [assignments, setAssignments] = useState<AssignmentMaterial[]>([]);
-  const [submissions, setSubmissions] = useState<AssignmentSubmission[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [assignments, setAssignments] = useState(() =>
+    readAssignmentsLocal().filter((item) => item.classId === classId)
+  );
+  const [submissions, setSubmissions] = useState(() =>
+    readAssignmentSubmissionsLocal().filter((item) => item.studentId === studentId)
+  );
+  const [isLoading, setIsLoading] = useState(
+    () => readAssignmentsLocal().length === 0 && readAssignmentSubmissionsLocal().length === 0
+  );
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   const [uploadPercent, setUploadPercent] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
-    const load = async () => {
-      setIsLoading(true);
+    let cancelled = false;
+    const hasCache = readAssignmentsLocal().length > 0 || readAssignmentSubmissionsLocal().length > 0;
+
+    const load = async (silent: boolean) => {
+      if (!silent) setIsLoading(true);
       try {
         const [assignmentList, submissionList] = await Promise.all([
           fetchAssignments(),
           fetchAssignmentSubmissions(),
         ]);
-        setAssignments(assignmentList);
+        if (cancelled) return;
+        setAssignments(assignmentList.filter((item) => item.classId === classId));
         setSubmissions(submissionList.filter((item) => item.studentId === studentId));
+        setError(null);
       } catch (err) {
         console.error('Failed to load assignments:', err);
-        setError('Failed to load assignments.');
+        if (!cancelled && !silent) setError('Failed to load submissions.');
       } finally {
-        setIsLoading(false);
+        if (!cancelled && !silent) setIsLoading(false);
       }
     };
-    void load();
-  }, [studentId]);
+
+    void load(hasCache);
+    return () => {
+      cancelled = true;
+    };
+  }, [studentId, classId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30000);
@@ -81,20 +100,18 @@ export const StudentAssignments: React.FC<StudentAssignmentsProps> = ({
     return map;
   }, [submissions]);
 
-  const handleDownload = async (assignment: AssignmentMaterial) => {
+  const handleDownload = (assignment: AssignmentMaterial) => {
     setError(null);
     try {
-      setDownloadingId(assignment.id);
-      await downloadAssignment(assignment);
+      void downloadAssignment(assignment);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to download file.');
-    } finally {
-      setDownloadingId(null);
     }
   };
 
   const handleSubmitWork = async (assignment: AssignmentMaterial, file: File) => {
     setError(null);
+    setSuccess(null);
     if (isAssignmentClosed(assignment, now)) {
       setError('Submission is closed for this assignment.');
       return;
@@ -113,6 +130,7 @@ export const StudentAssignments: React.FC<StudentAssignmentsProps> = ({
       });
       setSubmissions((prev) => [submitted, ...prev.filter((item) => item.assignmentId !== assignment.id)]);
       setUploadPercent(0);
+      setSuccess(`Submitted successfully: ${submitted.fileName}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to submit assignment.');
     } finally {
@@ -123,7 +141,7 @@ export const StudentAssignments: React.FC<StudentAssignmentsProps> = ({
   return (
     <div id="student-assignments" className="space-y-5">
       <div>
-        <h2 className="text-lg font-bold text-slate-900 tracking-tight">Assignments</h2>
+        <h2 className="text-lg font-bold text-slate-900 tracking-tight">Submissions</h2>
         <p className="text-xs text-slate-500 mt-0.5">
           Download the teacher file, then submit your work before the close date and time.
         </p>
@@ -135,17 +153,23 @@ export const StudentAssignments: React.FC<StudentAssignmentsProps> = ({
           <span>{error}</span>
         </div>
       )}
+      {success && (
+        <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>{success}</span>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
         {isLoading ? (
           <div className="p-12 text-center">
             <div className="w-7 h-7 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-xs text-slate-500">Loading assignments...</p>
+            <p className="text-xs text-slate-500">Loading submissions...</p>
           </div>
         ) : assignments.length === 0 ? (
           <div className="p-12 text-center">
             <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-slate-800">No assignments yet</p>
+            <p className="text-sm font-semibold text-slate-800">No submissions yet</p>
             <p className="text-xs text-slate-400 mt-1">Files uploaded by your teacher will appear here.</p>
           </div>
         ) : (
@@ -176,12 +200,11 @@ export const StudentAssignments: React.FC<StudentAssignmentsProps> = ({
                     </div>
                     <button
                       type="button"
-                      disabled={downloadingId === assignment.id}
                       onClick={() => handleDownload(assignment)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg cursor-pointer disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg cursor-pointer"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      {downloadingId === assignment.id ? 'Downloading...' : 'Download'}
+                      Download
                     </button>
                   </div>
 

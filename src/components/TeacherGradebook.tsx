@@ -10,15 +10,18 @@ import {
   ClipboardList,
   Pencil,
 } from 'lucide-react';
-import type { GradeAssessment, GradeSection, Student } from '../types';
+import type { GradeAssessment, GradeMark, GradeSection, Student } from '../types';
 import {
   addGradeAssessment,
+  computeClassGradebookStats,
   createGradeSection,
   deleteGradeAssessment,
   deleteGradeSection,
   fetchGradeAssessments,
   fetchGradeMarks,
   fetchGradeSections,
+  formatGradePercent,
+  getGradeColorScheme,
   markKey,
   marksToMap,
   nextAssessmentName,
@@ -62,6 +65,12 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [gradeFilter, setGradeFilter] = useState<
+    'all' | 'complete' | 'incomplete' | 'above_average' | 'below_average' | 'failing'
+  >('all');
+  const [sortBy, setSortBy] = useState<
+    'name_asc' | 'name_desc' | 'percent_desc' | 'percent_asc' | 'most_missing' | 'least_missing'
+  >('name_asc');
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [sectionName, setSectionName] = useState('');
@@ -136,16 +145,6 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
     return result;
   }, [sections, assessmentsBySection]);
 
-  const filteredStudents = useMemo(
-    () =>
-      students.filter(
-        (s) =>
-          s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          s.email.toLowerCase().includes(searchTerm.toLowerCase())
-      ),
-    [students, searchTerm]
-  );
-
   const dirtyCount = useMemo(() => {
     const keys = new Set([...Object.keys(draftMarks), ...Object.keys(savedMarks)]);
     let count = 0;
@@ -154,6 +153,118 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
     });
     return count;
   }, [draftMarks, savedMarks]);
+
+  const draftAsMarks = useMemo((): GradeMark[] => {
+    const now = new Date().toISOString();
+    const result: GradeMark[] = [];
+    orderedAssessments.forEach((assessment) => {
+      students.forEach((student) => {
+        const key = markKey(assessment.id, student.id);
+        const raw = draftMarks[key]?.trim() ?? '';
+        if (raw === '') return;
+        const num = Number(raw);
+        if (!Number.isFinite(num)) return;
+        result.push({
+          id: key,
+          assessmentId: assessment.id,
+          studentId: student.id,
+          marks: num,
+          updatedAt: now,
+        });
+      });
+    });
+    return result;
+  }, [draftMarks, orderedAssessments, students]);
+
+  const classStats = useMemo(
+    () =>
+      computeClassGradebookStats(
+        students.map((student) => student.id),
+        orderedAssessments,
+        draftAsMarks
+      ),
+    [students, orderedAssessments, draftAsMarks]
+  );
+
+  const classAverageColors = getGradeColorScheme(classStats.classAveragePercent);
+
+  const displayStudents = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    let list = students.filter(
+      (s) =>
+        !query ||
+        s.name.toLowerCase().includes(query) ||
+        s.email.toLowerCase().includes(query)
+    );
+
+    const markStatsFor = (studentId: string) => {
+      let missing = 0;
+      orderedAssessments.forEach((assessment) => {
+        const raw = draftMarks[markKey(assessment.id, studentId)]?.trim() ?? '';
+        if (raw === '') missing += 1;
+      });
+      const stats = classStats.byStudentId[studentId];
+      const percent = stats && stats.total > 0 ? stats.percent : null;
+      return { missing, percent };
+    };
+
+    if (gradeFilter !== 'all' && orderedAssessments.length > 0) {
+      list = list.filter((student) => {
+        const { missing, percent } = markStatsFor(student.id);
+        const avg = classStats.classAveragePercent;
+
+        switch (gradeFilter) {
+          case 'complete':
+            return missing === 0;
+          case 'incomplete':
+            return missing > 0;
+          case 'above_average':
+            return percent !== null && percent >= avg;
+          case 'below_average':
+            return percent !== null && percent < avg;
+          case 'failing':
+            return percent !== null && percent < 40;
+          default:
+            return true;
+        }
+      });
+    }
+
+    const sorted = [...list];
+    sorted.sort((a, b) => {
+      const statsA = markStatsFor(a.id);
+      const statsB = markStatsFor(b.id);
+
+      switch (sortBy) {
+        case 'name_desc':
+          return b.name.localeCompare(a.name);
+        case 'percent_desc':
+          return (statsB.percent ?? -1) - (statsA.percent ?? -1);
+        case 'percent_asc':
+          return (statsA.percent ?? 101) - (statsB.percent ?? 101);
+        case 'most_missing':
+          return statsB.missing - statsA.missing;
+        case 'least_missing':
+          return statsA.missing - statsB.missing;
+        case 'name_asc':
+        default:
+          return a.name.localeCompare(b.name);
+      }
+    });
+
+    return sorted;
+  }, [
+    students,
+    searchTerm,
+    gradeFilter,
+    sortBy,
+    draftMarks,
+    orderedAssessments,
+    classStats,
+  ]);
+
+  const hasActiveFilters =
+    searchTerm.trim() !== '' || gradeFilter !== 'all' || sortBy !== 'name_asc';
 
   const handleCreateSection = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -394,6 +505,22 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
         </div>
       ) : (
         <>
+          {orderedAssessments.length > 0 && (
+            <div
+              className={`rounded-xl border px-4 py-3 shadow-xs max-w-xs ${classAverageColors.card}`}
+            >
+              <p
+                className={`text-[11px] font-semibold uppercase tracking-wider ${classAverageColors.label}`}
+              >
+                Class Average
+              </p>
+              <p className={`text-xl font-bold mt-1 ${classAverageColors.value}`}>
+                {formatGradePercent(classStats.classAveragePercent)}
+                <span className={`text-sm font-semibold ${classAverageColors.suffix}`}> / 100</span>
+              </p>
+            </div>
+          )}
+
           {sections.length === 0 ? (
             <div className="bg-white rounded-xl border border-dashed border-slate-300 p-10 text-center">
               <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-3">
@@ -511,25 +638,106 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
           )}
 
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <ClipboardList className="w-4 h-4 text-slate-500" />
-                  <span>Student Marks</span>
-                </h3>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Each assessment has its own total, for example Assignment 1 / 10 and Assignment 2 / 15.
-                </p>
+            <div className="p-4 border-b border-slate-200 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <ClipboardList className="w-4 h-4 text-slate-500" />
+                    <span>Student Marks</span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Filter, sort, and search students in the marks table.
+                  </p>
+                </div>
+                <div className="relative w-full sm:w-56">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search name or email..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
               </div>
-              <div className="relative w-full sm:w-56">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Search students..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+
+              <div className="flex flex-col lg:flex-row lg:items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <label htmlFor="gradebook-filter" className="text-[11px] font-semibold text-slate-500">
+                    Filter
+                  </label>
+                  <select
+                    id="gradebook-filter"
+                    value={gradeFilter}
+                    onChange={(e) =>
+                      setGradeFilter(
+                        e.target.value as
+                          | 'all'
+                          | 'complete'
+                          | 'incomplete'
+                          | 'above_average'
+                          | 'below_average'
+                          | 'failing'
+                      )
+                    }
+                    className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="all">All students</option>
+                    <option value="complete">All marks entered</option>
+                    <option value="incomplete">Missing marks</option>
+                    <option value="above_average">At or above class average</option>
+                    <option value="below_average">Below class average</option>
+                    <option value="failing">Failing (&lt; 40%)</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <label htmlFor="gradebook-sort" className="text-[11px] font-semibold text-slate-500">
+                    Sort by
+                  </label>
+                  <select
+                    id="gradebook-sort"
+                    value={sortBy}
+                    onChange={(e) =>
+                      setSortBy(
+                        e.target.value as
+                          | 'name_asc'
+                          | 'name_desc'
+                          | 'percent_desc'
+                          | 'percent_asc'
+                          | 'most_missing'
+                          | 'least_missing'
+                      )
+                    }
+                    className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="name_asc">Name (A → Z)</option>
+                    <option value="name_desc">Name (Z → A)</option>
+                    <option value="percent_desc">Overall % (high → low)</option>
+                    <option value="percent_asc">Overall % (low → high)</option>
+                    <option value="most_missing">Most missing marks</option>
+                    <option value="least_missing">Least missing marks</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+                  <span className="text-[11px] text-slate-500">
+                    Showing {displayStudents.length} of {students.length}
+                  </span>
+                  {hasActiveFilters && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchTerm('');
+                        setGradeFilter('all');
+                        setSortBy('name_asc');
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg cursor-pointer"
+                    >
+                      Clear filters
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -541,8 +749,10 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
               <div className="p-10 text-center text-xs text-slate-500">
                 Add at least one assessment to start entering marks.
               </div>
-            ) : filteredStudents.length === 0 ? (
-              <div className="p-10 text-center text-xs text-slate-500">No matching students found.</div>
+            ) : displayStudents.length === 0 ? (
+              <div className="p-10 text-center text-xs text-slate-500">
+                No students match your search or filters.
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table id="gradebook-marks-table" className="w-full text-left border-collapse min-w-max">
@@ -553,6 +763,12 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
                         className="py-2.5 px-4 sticky left-0 bg-slate-800 z-10 min-w-[160px]"
                       >
                         Student
+                      </th>
+                      <th
+                        scope="col"
+                        className="py-2.5 px-3 text-center bg-slate-800 min-w-[88px] border-l border-slate-700"
+                      >
+                        Overall %
                       </th>
                       {sections.map((section) => {
                         const cols = assessmentsBySection[section.id]?.length || 0;
@@ -570,6 +786,9 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
                     </tr>
                     <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500">
                       <th className="py-2 px-4 sticky left-0 bg-slate-50 z-10" />
+                      <th className="py-2 px-3 text-center border-l border-slate-100 bg-slate-50 sticky left-[160px] z-10">
+                        Course
+                      </th>
                       {orderedAssessments.map((assessment) => (
                         <th
                           key={assessment.id}
@@ -581,10 +800,24 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-xs">
-                    {filteredStudents.map((student) => (
+                    {displayStudents.map((student) => {
+                      const studentStats = classStats.byStudentId[student.id];
+                      const overallPercent =
+                        studentStats && studentStats.total > 0 ? studentStats.percent : null;
+                      const percentColors =
+                        overallPercent !== null
+                          ? getGradeColorScheme(overallPercent)
+                          : getGradeColorScheme(0);
+
+                      return (
                       <tr key={student.id} className="hover:bg-slate-50/60">
                         <td className="py-2 px-4 sticky left-0 bg-white z-10 font-semibold text-slate-900 whitespace-nowrap">
                           {student.name}
+                        </td>
+                        <td
+                          className={`py-2 px-3 text-center border-l border-slate-100 sticky left-[160px] bg-white z-10 font-bold text-xs whitespace-nowrap ${percentColors.value}`}
+                        >
+                          {overallPercent !== null ? `${formatGradePercent(overallPercent)}%` : '—'}
                         </td>
                         {orderedAssessments.map((assessment) => {
                           const key = markKey(assessment.id, student.id);
@@ -614,7 +847,8 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
                           );
                         })}
                       </tr>
-                    ))}
+                    );
+                    })}
                   </tbody>
                 </table>
               </div>

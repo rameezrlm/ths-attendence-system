@@ -8,6 +8,7 @@ import {
   Trash2,
   BookOpen,
   ClipboardList,
+  Download,
   Pencil,
 } from 'lucide-react';
 import type { GradeAssessment, GradeMark, GradeSection, Student } from '../types';
@@ -28,9 +29,15 @@ import {
   saveGradeMarks,
   updateGradeAssessment,
 } from '../services/gradebookService';
+import {
+  exportGradebookResultSheet,
+  exportGradebookResultSheetExcel,
+} from '../services/gradebookResultSheetService';
 
 interface TeacherGradebookProps {
   classId: string;
+  className: string;
+  teacherName: string;
   students: Student[];
   showToast: (type: 'success' | 'error', message: string) => void;
 }
@@ -55,6 +62,8 @@ function parseMarksInput(raw: string, max: number): { value: number | null; erro
 
 export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
   classId,
+  className,
+  teacherName,
   students,
   showToast,
 }) => {
@@ -71,6 +80,7 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
   const [sortBy, setSortBy] = useState<
     'name_asc' | 'name_desc' | 'percent_desc' | 'percent_asc' | 'most_missing' | 'least_missing'
   >('name_asc');
+  const [isDownloadingSheet, setIsDownloadingSheet] = useState(false);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [sectionName, setSectionName] = useState('');
@@ -265,6 +275,36 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
 
   const hasActiveFilters =
     searchTerm.trim() !== '' || gradeFilter !== 'all' || sortBy !== 'name_asc';
+
+  const buildResultSheetInput = () => ({
+    className: className || 'Course',
+    teacherName,
+    students,
+    sections,
+    assessments: orderedAssessments,
+    marksMap: draftMarks,
+  });
+
+  const handleDownloadResultSheet = async () => {
+    try {
+      setIsDownloadingSheet(true);
+      await exportGradebookResultSheet(buildResultSheetInput());
+      showToast('success', 'Result sheet downloaded. Open the file and use Print to save as PDF.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to download result sheet.');
+    } finally {
+      setIsDownloadingSheet(false);
+    }
+  };
+
+  const handleDownloadResultSheetExcel = () => {
+    try {
+      exportGradebookResultSheetExcel(buildResultSheetInput());
+      showToast('success', 'Excel result sheet downloaded.');
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to download Excel sheet.');
+    }
+  };
 
   const handleCreateSection = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -496,6 +536,29 @@ export const TeacherGradebook: React.FC<TeacherGradebookProps> = ({
             Create sections once, then add assessments. Marks are entered per student in the table below.
           </p>
         </div>
+        {orderedAssessments.length > 0 && students.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              id="btn-download-result-sheet"
+              type="button"
+              disabled={isDownloadingSheet}
+              onClick={() => void handleDownloadResultSheet()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{isDownloadingSheet ? 'Preparing...' : 'Download Result Sheet'}</span>
+            </button>
+            <button
+              id="btn-download-result-sheet-excel"
+              type="button"
+              onClick={handleDownloadResultSheetExcel}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-xs transition-colors cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Excel</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {isLoading ? (

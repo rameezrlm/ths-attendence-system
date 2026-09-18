@@ -661,6 +661,8 @@ export default function App() {
           <section id="section-gradebook" aria-label="Teacher Gradebook">
             <TeacherGradebook
               classId={selectedClassId}
+              className={selectedClass?.name || 'Course'}
+              teacherName={session.name}
               students={classStudents}
               showToast={showToast}
             />

@@ -1,6 +1,6 @@
-export type AttendanceStatus = 'present' | 'absent' | 'late' | 'early_left';
+export type AttendanceStatus = 'present' | 'absent' | 'late' | 'early_left' | 'leave';
 
-export type AttendanceCode = 'P' | 'A' | 'L' | 'EL';
+export type AttendanceCode = 'P' | 'A' | 'L' | 'EL' | 'LV';
 
 export interface Student {
   id: string;
@@ -36,6 +36,7 @@ export type AttendanceFilter =
   | 'absent'
   | 'late'
   | 'early_left'
+  | 'leave'
   | 'unmarked';
 
 export interface Teacher {
@@ -70,6 +71,7 @@ export interface AttendanceSummary {
   absent: number;
   late: number;
   earlyLeft: number;
+  leave: number;
   unmarked: number;
 }
 

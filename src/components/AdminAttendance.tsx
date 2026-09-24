@@ -98,6 +98,7 @@ export const AdminAttendance: React.FC<AdminAttendanceProps> = ({
     let absent = 0;
     let late = 0;
     let earlyLeft = 0;
+    let leave = 0;
 
     students.forEach((s) => {
       const st = attendanceMap[s.id]?.status;
@@ -105,13 +106,14 @@ export const AdminAttendance: React.FC<AdminAttendanceProps> = ({
       else if (st === 'absent') absent++;
       else if (st === 'late') late++;
       else if (st === 'early_left') earlyLeft++;
+      else if (st === 'leave') leave++;
     });
 
     const totalStudents = students.length;
-    const marked = present + absent + late + earlyLeft;
+    const marked = present + absent + late + earlyLeft + leave;
     const unmarked = Math.max(0, totalStudents - marked);
 
-    return { totalStudents, present, absent, late, earlyLeft, unmarked };
+    return { totalStudents, present, absent, late, earlyLeft, leave, unmarked };
   }, [students, attendanceMap]);
 
   const handleStatusChange = (studentId: string, status: AttendanceStatus) => {

@@ -20,3 +20,118 @@
 .animate-zoom-in {
   animation: zoom-in-card 0.35s ease-out both;
 }
+
+/* Login — glass card */
+.login-glass-card {
+  box-shadow:
+    0 8px 32px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+/* Login — soft green floating education icons */
+.login-float-icon {
+  position: absolute;
+  color: #059669;
+  opacity: 0.22;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  will-change: transform;
+}
+
+.login-float-1 {
+  top: 12%;
+  left: 8%;
+  animation: login-drift-a 18s ease-in-out infinite;
+}
+.login-float-2 {
+  top: 18%;
+  right: 10%;
+  animation: login-drift-b 22s ease-in-out infinite;
+}
+.login-float-3 {
+  top: 42%;
+  left: 5%;
+  animation: login-drift-c 16s ease-in-out infinite;
+}
+.login-float-4 {
+  top: 55%;
+  right: 7%;
+  animation: login-drift-a 20s ease-in-out infinite 1s;
+}
+.login-float-5 {
+  bottom: 18%;
+  left: 12%;
+  animation: login-drift-b 19s ease-in-out infinite 0.5s;
+}
+.login-float-6 {
+  bottom: 12%;
+  right: 14%;
+  animation: login-drift-c 17s ease-in-out infinite 1.2s;
+}
+.login-float-7 {
+  top: 8%;
+  left: 42%;
+  animation: login-drift-a 21s ease-in-out infinite 0.8s;
+}
+.login-float-8 {
+  bottom: 28%;
+  left: 38%;
+  animation: login-drift-b 23s ease-in-out infinite;
+}
+.login-float-9 {
+  top: 32%;
+  right: 22%;
+  animation: login-drift-c 15s ease-in-out infinite 2s;
+}
+.login-float-10 {
+  bottom: 8%;
+  left: 55%;
+  animation: login-drift-a 24s ease-in-out infinite 0.3s;
+}
+.login-float-11 {
+  top: 68%;
+  right: 28%;
+  animation: login-drift-b 18s ease-in-out infinite 1.5s;
+}
+.login-float-12 {
+  top: 48%;
+  left: 22%;
+  animation: login-drift-c 20s ease-in-out infinite 0.6s;
+}
+
+@keyframes login-drift-a {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate(18px, -28px) rotate(8deg);
+  }
+}
+
+@keyframes login-drift-b {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate(-22px, 20px) rotate(-10deg);
+  }
+}
+
+@keyframes login-drift-c {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate(14px, 24px) rotate(6deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-float-icon {
+    animation: none !important;
+  }
+}

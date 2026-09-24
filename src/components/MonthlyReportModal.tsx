@@ -252,8 +252,11 @@ export const MonthlyReportModal: React.FC<MonthlyReportModalProps> = ({
                     <th className="py-2.5 px-2 text-center text-amber-700 bg-amber-50/75 font-semibold border-r border-slate-200">
                       L
                     </th>
-                    <th className="py-2.5 px-2 text-center text-teal-700 bg-teal-50/75 font-semibold">
+                    <th className="py-2.5 px-2 text-center text-teal-700 bg-teal-50/75 font-semibold border-r border-slate-200">
                       EL
+                    </th>
+                    <th className="py-2.5 px-2 text-center text-violet-700 bg-violet-50/75 font-semibold">
+                      LV
                     </th>
                   </tr>
                 </thead>
@@ -263,6 +266,7 @@ export const MonthlyReportModal: React.FC<MonthlyReportModalProps> = ({
                     let countA = 0;
                     let countL = 0;
                     let countEL = 0;
+                    let countLV = 0;
 
                     return (
                       <tr key={student.id} className="hover:bg-slate-50/60 transition-colors">
@@ -283,12 +287,14 @@ export const MonthlyReportModal: React.FC<MonthlyReportModalProps> = ({
                           else if (status === 'absent') countA++;
                           else if (status === 'late') countL++;
                           else if (status === 'early_left') countEL++;
+                          else if (status === 'leave') countLV++;
 
                           let badgeColor = 'text-slate-200';
                           if (code === 'P') badgeColor = 'text-green-600 font-bold';
                           else if (code === 'A') badgeColor = 'text-red-600 font-bold';
                           else if (code === 'L') badgeColor = 'text-amber-600 font-bold';
                           else if (code === 'EL') badgeColor = 'text-teal-600 font-bold';
+                          else if (code === 'LV') badgeColor = 'text-violet-600 font-bold';
 
                           return (
                             <td
@@ -308,8 +314,11 @@ export const MonthlyReportModal: React.FC<MonthlyReportModalProps> = ({
                         <td className="py-2.5 px-2 text-center font-bold text-amber-700 bg-amber-50/30 border-r border-slate-100">
                           {countL}
                         </td>
-                        <td className="py-2.5 px-2 text-center font-bold text-teal-700 bg-teal-50/30">
+                        <td className="py-2.5 px-2 text-center font-bold text-teal-700 bg-teal-50/30 border-r border-slate-100">
                           {countEL}
+                        </td>
+                        <td className="py-2.5 px-2 text-center font-bold text-violet-700 bg-violet-50/30">
+                          {countLV}
                         </td>
                       </tr>
                     );

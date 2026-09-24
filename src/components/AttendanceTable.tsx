@@ -57,6 +57,11 @@ const STATUS_CONFIG: Record<
     activeClasses: 'bg-teal-600 text-white font-semibold shadow-xs',
     inactiveClasses: 'text-slate-500 hover:text-slate-800 hover:bg-slate-100',
   },
+  leave: {
+    label: 'Leave',
+    activeClasses: 'bg-violet-600 text-white font-semibold shadow-xs',
+    inactiveClasses: 'text-slate-500 hover:text-slate-800 hover:bg-slate-100',
+  },
 };
 
 function formatJoinTime(iso?: string): string {
@@ -95,6 +100,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
   const absentCount = students.filter((s) => attendanceMap[s.id]?.status === 'absent').length;
   const lateCount = students.filter((s) => attendanceMap[s.id]?.status === 'late').length;
   const earlyLeftCount = students.filter((s) => attendanceMap[s.id]?.status === 'early_left').length;
+  const leaveCount = students.filter((s) => attendanceMap[s.id]?.status === 'leave').length;
   const unmarkedCount = students.filter((s) => !attendanceMap[s.id]).length;
 
   const filteredStudents = useMemo(() => {
@@ -109,6 +115,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
       if (statusFilter === 'absent') return status === 'absent';
       if (statusFilter === 'late') return status === 'late';
       if (statusFilter === 'early_left') return status === 'early_left';
+      if (statusFilter === 'leave') return status === 'leave';
       if (statusFilter === 'unmarked') return !status;
       return true;
     });
@@ -120,6 +127,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
       if (statusFilter === 'absent') return 'No absent students';
       if (statusFilter === 'late') return 'No late students';
       if (statusFilter === 'early_left') return 'No early left students';
+      if (statusFilter === 'leave') return 'No students on leave';
       if (statusFilter === 'unmarked') return 'No unmarked students';
       return 'No matching students found';
     }
@@ -133,6 +141,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
     if (statusFilter === 'early_left') {
       return 'Mark students as Early Left to see them in this filter.';
     }
+    if (statusFilter === 'leave') return 'Mark students as Leave to see them in this filter.';
     if (statusFilter === 'unmarked') return 'All students have been marked for this date.';
     if (searchTerm) return 'Try searching with another name or email';
     return 'Please contact the administrator to register students in the system.';
@@ -168,6 +177,12 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
       label: 'Early Left',
       count: earlyLeftCount,
       activeClasses: 'bg-teal-600 text-white border-teal-600',
+    },
+    {
+      id: 'leave',
+      label: 'Leave',
+      count: leaveCount,
+      activeClasses: 'bg-violet-600 text-white border-violet-600',
     },
     {
       id: 'unmarked',
@@ -349,7 +364,7 @@ export const AttendanceTable: React.FC<AttendanceTableProps> = ({
                           id={`attendance-options-${student.id}`}
                           className="inline-flex items-center p-1 bg-slate-100 rounded-lg gap-1"
                         >
-                          {(['present', 'absent', 'late', 'early_left'] as AttendanceStatus[]).map(
+                          {(['present', 'absent', 'late', 'early_left', 'leave'] as AttendanceStatus[]).map(
                             (statusKey) => {
                               const config = STATUS_CONFIG[statusKey];
                               const isSelected = currentStatus === statusKey;

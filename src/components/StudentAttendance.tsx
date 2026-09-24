@@ -58,6 +58,12 @@ const STATUS_STYLE: Record<
     cell: 'bg-teal-100 text-teal-800 border-teal-200',
     badge: 'bg-teal-50 text-teal-700 border-teal-200',
   },
+  leave: {
+    label: 'Leave',
+    code: 'LV',
+    cell: 'bg-violet-100 text-violet-800 border-violet-200',
+    badge: 'bg-violet-50 text-violet-700 border-violet-200',
+  },
 };
 
 function mondayOffset(year: number, month: number): number {
@@ -100,7 +106,6 @@ export const StudentAttendance: React.FC<StudentAttendanceProps> = ({
 
   useEffect(() => {
     let isMounted = true;
-    const hasCache = getAttendanceForStudentLocal(studentId, classId).length > 0;
 
     const load = async (silent: boolean) => {
       if (!silent) setIsLoading(true);
@@ -115,9 +120,19 @@ export const StudentAttendance: React.FC<StudentAttendanceProps> = ({
       }
     };
 
+    const hasCache = getAttendanceForStudentLocal(studentId, classId).length > 0;
     void load(hasCache);
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+
     return () => {
       isMounted = false;
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
     };
   }, [studentId, classId]);
 
@@ -144,6 +159,7 @@ export const StudentAttendance: React.FC<StudentAttendanceProps> = ({
   const absent = monthRecords.filter((r) => r.status === 'absent').length;
   const late = monthRecords.filter((r) => r.status === 'late').length;
   const earlyLeft = monthRecords.filter((r) => r.status === 'early_left').length;
+  const leave = monthRecords.filter((r) => r.status === 'leave').length;
   const marked = monthRecords.length;
   const attended = present + late + earlyLeft;
   const percent = marked > 0 ? Math.round((attended / marked) * 100) : null;
@@ -194,7 +210,7 @@ export const StudentAttendance: React.FC<StudentAttendanceProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Present</p>
           <p className="text-xl font-bold text-green-700 mt-0.5">{present}</p>
@@ -211,7 +227,11 @@ export const StudentAttendance: React.FC<StudentAttendanceProps> = ({
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Early Left</p>
           <p className="text-xl font-bold text-teal-700 mt-0.5">{earlyLeft}</p>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs col-span-2 sm:col-span-1">
+        <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Leave</p>
+          <p className="text-xl font-bold text-violet-700 mt-0.5">{leave}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-xs">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Attended</p>
           <p className="text-xl font-bold text-indigo-700 mt-0.5">
             {percent === null ? '—' : `${percent}%`}
@@ -241,7 +261,7 @@ export const StudentAttendance: React.FC<StudentAttendanceProps> = ({
             {Array.from({ length: daysInMonth }).map((_, idx) => {
               const day = idx + 1;
               const rec = byDay[day];
-              const style = rec ? STATUS_STYLE[rec.status] : null;
+              const style = rec ? STATUS_STYLE[rec.status] ?? null : null;
               return (
                 <div
                   key={day}
@@ -276,6 +296,7 @@ export const StudentAttendance: React.FC<StudentAttendanceProps> = ({
               .sort((a, b) => a.date.localeCompare(b.date))
               .map((rec) => {
                 const style = STATUS_STYLE[rec.status];
+                if (!style) return null;
                 return (
                   <li key={rec.id || rec.date} className="px-4 py-3 flex items-center justify-between gap-3">
                     <span className="text-xs font-medium text-slate-700">{formatDayLabel(rec.date)}</span>

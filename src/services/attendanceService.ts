@@ -40,9 +40,21 @@ function toDayEntry(rec: AttendanceRecord): AttendanceDayEntry {
  * Fetch attendance map for a specific date (format: YYYY-MM-DD).
  * Returns: { [studentId]: { status, joinTime? } }
  */
+/**
+ * Strict class match for teacher/admin day roster.
+ * Records without classId only appear when no class filter is set (admin global view).
+ */
 function matchesClassFilter(rec: AttendanceRecord, classId?: string): boolean {
   if (!classId) return true;
   return rec.classId === classId;
+}
+
+/**
+ * Student view: show class-scoped records plus legacy/admin records with no classId.
+ */
+function matchesStudentClassFilter(rec: AttendanceRecord, classId?: string): boolean {
+  if (!classId) return true;
+  return !rec.classId || rec.classId === classId;
 }
 
 function buildAttendanceId(classId: string | undefined, studentId: string, dateStr: string): string {
@@ -183,11 +195,21 @@ export function getAttendanceForStudentLocal(
   classId?: string
 ): AttendanceRecord[] {
   const localMap = getLocalAttendance();
-  return sortAttendanceNewest(
-    Object.values(localMap).filter(
-      (rec) => rec.studentId === studentId && matchesClassFilter(rec, classId)
-    )
+  const filtered = Object.values(localMap).filter(
+    (rec) => rec.studentId === studentId && matchesStudentClassFilter(rec, classId)
   );
+  const byDate = new Map<string, AttendanceRecord>();
+  sortAttendanceNewest(filtered).forEach((rec) => {
+    const existing = byDate.get(rec.date);
+    if (!existing) {
+      byDate.set(rec.date, rec);
+      return;
+    }
+    if (classId && rec.classId === classId && existing.classId !== classId) {
+      byDate.set(rec.date, rec);
+    }
+  });
+  return sortAttendanceNewest([...byDate.values()]);
 }
 
 /**
@@ -204,12 +226,31 @@ export async function getAttendanceForStudent(
       const q = query(collection(db, 'attendance'), where('studentId', '==', studentId));
       const snap = await withFirestoreTimeout(getDocs(q));
       const records: AttendanceRecord[] = [];
+      const localMap = getLocalAttendance();
+
       snap.forEach((d) => {
-        records.push(d.data() as AttendanceRecord);
+        const data = { ...(d.data() as AttendanceRecord), id: d.id };
+        records.push(data);
+        localMap[d.id] = data;
       });
-      return sortAttendanceNewest(
-        records.filter((rec) => matchesClassFilter(rec, classId))
-      );
+      saveLocalAttendanceMap(localMap);
+
+      // Prefer newest record per date when both class-scoped and legacy exist
+      const byDate = new Map<string, AttendanceRecord>();
+      sortAttendanceNewest(
+        records.filter((rec) => matchesStudentClassFilter(rec, classId))
+      ).forEach((rec) => {
+        const existing = byDate.get(rec.date);
+        if (!existing) {
+          byDate.set(rec.date, rec);
+          return;
+        }
+        if (classId && rec.classId === classId && existing.classId !== classId) {
+          byDate.set(rec.date, rec);
+        }
+      });
+
+      return sortAttendanceNewest([...byDate.values()]);
     } catch (err) {
       console.warn('Error fetching student attendance from Firestore, checking local:', err);
     }

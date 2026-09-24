@@ -1,11 +1,39 @@
 import React, { useState } from 'react';
-import { Lock, Mail, AlertCircle, ArrowRight } from 'lucide-react';
+import {
+  Lock,
+  Mail,
+  AlertCircle,
+  ArrowRight,
+  BookOpen,
+  GraduationCap,
+  Pencil,
+  Award,
+  Microscope,
+  Lightbulb,
+  Calculator,
+  School,
+} from 'lucide-react';
 import { loginUser } from '../services/teacherService';
 import type { UserSession } from '../types';
 
 interface LoginProps {
   onLoginSuccess: (session: UserSession) => void;
 }
+
+const FLOATING_ICONS = [
+  { Icon: BookOpen, className: 'login-float-icon login-float-1', size: 28 },
+  { Icon: GraduationCap, className: 'login-float-icon login-float-2', size: 32 },
+  { Icon: Pencil, className: 'login-float-icon login-float-3', size: 24 },
+  { Icon: Award, className: 'login-float-icon login-float-4', size: 26 },
+  { Icon: Microscope, className: 'login-float-icon login-float-5', size: 30 },
+  { Icon: Lightbulb, className: 'login-float-icon login-float-6', size: 24 },
+  { Icon: Calculator, className: 'login-float-icon login-float-7', size: 26 },
+  { Icon: School, className: 'login-float-icon login-float-8', size: 28 },
+  { Icon: BookOpen, className: 'login-float-icon login-float-9', size: 22 },
+  { Icon: GraduationCap, className: 'login-float-icon login-float-10', size: 34 },
+  { Icon: Pencil, className: 'login-float-icon login-float-11', size: 20 },
+  { Icon: Lightbulb, className: 'login-float-icon login-float-12', size: 28 },
+];
 
 export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [identifier, setIdentifier] = useState('');
@@ -39,85 +67,99 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   return (
     <div
       id="login-page-container"
-      className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4"
+      className="relative min-h-screen flex items-center justify-center overflow-hidden bg-white p-4 sm:p-6"
     >
-      <div className="max-w-sm w-full">
-        {/* Brand Card */}
-        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-7 sm:p-8">
-          {/* Logo & Title */}
-          <div className="text-center mb-6">
-            <div className="w-16 h-16 rounded-xl border border-slate-200 p-2 bg-white shadow-xs mx-auto mb-3 flex items-center justify-center">
+      {/* Soft green wash — still white-first */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(ellipse 80% 50% at 50% -10%, rgba(16, 185, 129, 0.08), transparent 55%)',
+        }}
+        aria-hidden="true"
+      />
+
+      {/* Flying education icons */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        {FLOATING_ICONS.map(({ Icon, className, size }, index) => (
+          <span key={index} className={className}>
+            <Icon style={{ width: size, height: size }} strokeWidth={1.5} />
+          </span>
+        ))}
+      </div>
+
+      {/* Glass login card */}
+      <div className="relative z-10 w-full max-w-[380px]">
+        <div className="login-glass-card rounded-3xl border border-white/70 bg-white/55 p-7 sm:p-8 shadow-[0_8px_40px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+          <div className="text-center mb-7">
+            <div className="w-[84px] h-[84px] rounded-full border border-emerald-100 bg-white/80 shadow-sm mx-auto mb-4 flex items-center justify-center overflow-hidden p-2">
               <img
-                src="/logo.png"
-                alt="Logo"
+                src="/ths-logo.png"
+                alt="Taleem-O-Hunar Society"
                 className="w-full h-full object-contain"
                 referrerPolicy="no-referrer"
                 onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = 'none';
+                  const el = e.currentTarget;
+                  if (el.src.includes('ths-logo')) {
+                    el.src = '/logo.png';
+                    return;
+                  }
+                  el.style.display = 'none';
                 }}
               />
             </div>
-
-            <h1 className="text-lg font-bold text-slate-900">
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">
               IT Lab Attendance
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-500 mt-1 font-medium">
               Taleem-O-Hunar Society
             </p>
           </div>
 
-          {/* Error alert */}
           {error && (
             <div
               id="login-error-alert"
-              className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2"
+              className="mb-5 p-3 rounded-xl bg-red-50/90 border border-red-200 text-red-700 text-xs flex items-start gap-2"
             >
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
               <span>{error}</span>
             </div>
           )}
 
-          {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label
-                htmlFor="login-identifier"
-                className="block text-xs font-semibold text-slate-700 mb-1.5"
-              >
+              <label htmlFor="login-identifier" className="sr-only">
                 Email
               </label>
               <div className="relative">
-                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Mail className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
                 <input
                   id="login-identifier"
                   type="text"
                   required
                   autoFocus
-                  placeholder="Enter your email"
+                  placeholder="Enter Username"
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                  className="w-full pl-11 pr-4 py-3 bg-white/70 border border-slate-200/90 rounded-full text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-700/25 focus:border-emerald-700 focus:bg-white transition-all"
                 />
               </div>
             </div>
 
             <div>
-              <label
-                htmlFor="login-password"
-                className="block text-xs font-semibold text-slate-700 mb-1.5"
-              >
+              <label htmlFor="login-password" className="sr-only">
                 Password
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Lock className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
                 <input
                   id="login-password"
                   type="password"
                   required
-                  placeholder="Enter your password"
+                  placeholder="Enter Password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                  className="w-full pl-11 pr-4 py-3 bg-white/70 border border-slate-200/90 rounded-full text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-700/25 focus:border-emerald-700 focus:bg-white transition-all"
                 />
               </div>
             </div>
@@ -126,18 +168,17 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               id="btn-login-submit"
               type="submit"
               disabled={isLoading}
-              className="w-full mt-2 inline-flex items-center justify-center gap-2 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold text-sm rounded-lg shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              className="w-full mt-2 inline-flex items-center justify-center gap-2 py-3 px-4 bg-emerald-800 hover:bg-emerald-900 active:bg-emerald-950 text-white font-semibold text-sm rounded-full shadow-sm transition-all cursor-pointer disabled:opacity-50"
             >
               <span>{isLoading ? 'Signing in...' : 'Sign In'}</span>
-              <ArrowRight className="w-4 h-4" />
+              {!isLoading && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
-        </div>
 
-        {/* Footer info */}
-        <p className="mt-5 text-center text-xs text-slate-400">
-          Teachers, students, and admin can sign in with their registered credentials.
-        </p>
+          <p className="mt-6 text-center text-[11px] text-slate-400 leading-relaxed">
+            Teachers, students, and admin can sign in with their registered credentials.
+          </p>
+        </div>
       </div>
     </div>
   );

@@ -32,6 +32,7 @@ export function getDaysInMonth(year: number, month: number): number {
  * absent -> A
  * late -> L
  * early_left -> EL
+ * leave -> LV
  */
 export function getStatusCode(status?: AttendanceStatus): string {
   if (!status) return '';
@@ -44,6 +45,8 @@ export function getStatusCode(status?: AttendanceStatus): string {
       return 'L';
     case 'early_left':
       return 'EL';
+    case 'leave':
+      return 'LV';
     default:
       return '';
   }
@@ -87,7 +90,7 @@ export function exportMonthlyRegister(
     headerRow.push(d);
   }
   // Summary count columns
-  headerRow.push('Total P', 'Total A', 'Total L', 'Total EL', 'Attendance %');
+  headerRow.push('Total P', 'Total A', 'Total L', 'Total EL', 'Total LV', 'Attendance %');
   rows.push(headerRow);
 
   // Student Rows
@@ -102,6 +105,7 @@ export function exportMonthlyRegister(
     let countA = 0;
     let countL = 0;
     let countEL = 0;
+    let countLV = 0;
     let totalMarked = 0;
 
     for (let d = 1; d <= totalDays; d++) {
@@ -113,15 +117,16 @@ export function exportMonthlyRegister(
       else if (status === 'absent') countA++;
       else if (status === 'late') countL++;
       else if (status === 'early_left') countEL++;
+      else if (status === 'leave') countLV++;
 
       if (status) totalMarked++;
     }
 
-    // Attendance percentage (Present + Late + EarlyLeft / total marked days or days with records)
+    // Attendance %: Present + Late + EarlyLeft (leave/absent not counted as attended)
     const effectiveAttended = countP + countL + countEL;
     const attPercentage = totalMarked > 0 ? `${Math.round((effectiveAttended / totalMarked) * 100)}%` : '-';
 
-    studentRow.push(countP, countA, countL, countEL, attPercentage);
+    studentRow.push(countP, countA, countL, countEL, countLV, attPercentage);
     rows.push(studentRow);
   });
 
@@ -159,7 +164,7 @@ export function exportMonthlyRegister(
   }
 
   // Summary columns
-  colWidths.push({ wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 10 }, { wch: 14 });
+  colWidths.push({ wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 10 }, { wch: 10 }, { wch: 14 });
   ws['!cols'] = colWidths;
 
   // Create workbook and trigger download

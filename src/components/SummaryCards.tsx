@@ -5,6 +5,7 @@ import {
   UserX,
   Clock,
   LogOut as EarlyLeftIcon,
+  Plane,
   CircleDashed,
 } from 'lucide-react';
 import type { AttendanceFilter, AttendanceSummary } from '../types';
@@ -81,6 +82,16 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
       activeClasses: 'border-teal-500 ring-2 ring-teal-500/20',
     },
     {
+      id: 'card-leave-count',
+      filter: 'leave',
+      label: 'Leave',
+      count: summary.leave,
+      icon: Plane,
+      iconColor: 'text-violet-600',
+      bgColor: 'bg-violet-50',
+      activeClasses: 'border-violet-500 ring-2 ring-violet-500/20',
+    },
+    {
       id: 'card-unmarked-count',
       filter: 'unmarked',
       label: 'Unmarked',
@@ -95,7 +106,7 @@ export const SummaryCards: React.FC<SummaryCardsProps> = ({
   return (
     <div
       id="summary-cards-container"
-      className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4"
+      className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3 sm:gap-4"
     >
       {cards.map((card) => {
         const IconComponent = card.icon;
